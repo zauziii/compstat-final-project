@@ -7,9 +7,10 @@
 # 16.10.2026: folders are not being created in the correct path; add a 
 #             helper function to locate the project root and set the 
 #             working directory; finished the gibbs sampler; part B in progress.
-# 17.10.2026: 
+# 17.10.2026: complete part B analysis and update helper functions.
+#             generated csv and PNG outputs are not included.
+#             part C in progress.
 # ============================================================================
-
 
 ## ---- 0. project root ------------------------------------------------------
 locate_root <- function() {
@@ -39,7 +40,6 @@ locate_root <- function() {
 }
 root <- locate_root()
 setwd(root)
-
 
 ## ---- 0.5 output layout ----------------------------------------------------
 data_dir <- "data"                  # raw inputs
