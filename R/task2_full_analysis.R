@@ -1,50 +1,60 @@
 # ============================================================================
-#
-#
-#
+# MAST32001 - Task 2: Bayesian mixture modelling with MCMC
+# Gibbs sampling, simulation validation and Old Faithful analysis.
 #
 # Log:
-# 16.10.2026: folders are not being created in the correct path; add a 
-#             helper function to locate the project root and set the 
+# 16.10.2026: folders are not being created in the correct path; add a
+#             helper function to locate the project root and set the
 #             working directory; finished the gibbs sampler; part B in progress.
 # 17.10.2026: complete part B analysis and update helper functions.
 #             generated csv and PNG outputs are not included.
 #             part C in progress.
+# 18.10.2026: use global theme palettes; standardise section titles
+#             and descriptive figure/table output names.
+#             reorder colours and enlarge text for report figures.
 # ============================================================================
 
-## ---- 0. project root ------------------------------------------------------
+## ---- 0. Locate the project root -------------------------------------------
 locate_root <- function() {
   # Get the script path from Rscript
   p <- grep("^--file=", commandArgs(), value = TRUE)
-  p <- if (length(p)) sub("^--file=", "", p[1]) else ""
+  p <- if (length(p))
+    sub("^--file=", "", p[1])
+  else
+    ""
   
   # Prefer the active script in RStudio
-  if (interactive() && requireNamespace("rstudioapi", quietly = TRUE) &&
+  if (interactive() &&
+      requireNamespace("rstudioapi", quietly = TRUE) &&
       rstudioapi::isAvailable()) {
     active <- rstudioapi::getSourceEditorContext()$path
-    if (length(active) && nzchar(active)) p <- active
+    if (length(active) && nzchar(active))
+      p <- active
   }
   
   # Start from the script directory or working directory
   d <- if (nzchar(p) && file.exists(p)) {
     dirname(normalizePath(p, winslash = "/"))
-  } else getwd()
+  } else
+    getwd()
   
   # Find the project root
   repeat {
-    if (file.exists(file.path(d, "R", "task2_full_analysis.R"))) return(d)
+    if (file.exists(file.path(d, "R", "task2_full_analysis.R")))
+      return(d)
     parent <- dirname(d)
-    if (identical(parent, d)) stop("Could not find the project root.")
+    if (identical(parent, d))
+      stop("Could not find the project root.")
     d <- parent
   }
 }
 root <- locate_root()
 setwd(root)
 
-## ---- 0.5 output layout ----------------------------------------------------
+## ---- 1. Create project directories ----------------------------------------
 data_dir <- "data"                  # raw inputs
 table_dir <- "results/tables"       # tables ad csv
-figure_dir <- "results/figures"     # figures as PDF + PNG
+figure_dir <- "results/figures"     # figures as PNG
 result_dir <- "results"             # RData workspace
 report_dir <- "report"              # rendered report, quarto output
 dir.create(table_dir, recursive = T, showWarnings = F)
@@ -52,8 +62,8 @@ dir.create(figure_dir, recursive = T, showWarnings = F)
 dir.create(result_dir, recursive = T, showWarnings = F)
 dir.create(report_dir, recursive = T, showWarnings = F)
 
-## ---- 1. setup: libraries and visualization style --------------------------
-# list all packages needed
+## ---- 2. Load packages and set the plotting style --------------------------
+# ---- 2.1 Required packages -------------------------------------------------
 pkgs <- c("tidyverse", "scales", "ggpubr", "coda", "ggsci", "posterior")
 
 # get the names of all currently installed packages
@@ -70,16 +80,44 @@ if (length(to_install) > 0) {
 # characer.only = TRUE lets library() accept a package name as a character string
 invisible(lapply(pkgs, library, character.only = TRUE))
 
-# publication ready style: global settings (fonts, sizes, colors)
+# ---- 2.2 Global plotting theme and default palettes ------------------------
+# Theme palette settings require ggplot2 >= 4.0.0.
+# Mapped colour/fill aesthetics below inherit these palettes.
+# Start the Okabe-Ito palette with blue, orange and green for clearer contrast.
+plot_palette <- c(
+  "#0072B2",
+  "#D55E00",
+  "#009E73",
+  "#CC79A7",
+  "#E69F00",
+  "#56B4E9",
+  "#F0E442",
+  "#000000"
+)
 theme_set(
-  theme_pubr(base_size = 7, base_family = "Helvetica") +
+  theme_pubr(base_size = 11, base_family = "sans") +
     theme(
-      palette.colour.discrete = "Okabe-Ito",
-      palette.fill.discrete = "Okabe-Ito"
+      palette.colour.discrete = plot_palette,
+      palette.fill.discrete = plot_palette,
+      axis.text = element_text(size = 10, colour = "#202020"),
+      axis.title = element_text(size = 11),
+      axis.line = element_line(linewidth = 0.3),
+      axis.ticks = element_line(linewidth = 0.3),
+      legend.text = element_text(size = 10),
+      legend.title = element_text(size = 10),
+      legend.key.width = grid::unit(8, "mm"),
+      strip.text = element_text(size = 10, face = "bold"),
+      strip.background = element_rect(
+        fill = "grey96",
+        colour = "#202020"
+      ),
+      plot.margin = margin(8, 8, 8, 8)
     )
 )
 
-# Export a figure at print size: 600 dpi PNG.
+# ---- 2.3 PNG export helper -------------------------------------------------
+# Insert double-width figures at about 160-180 mm in the report.
+# Enlarged text stays readable when the exported image is reduced slightly.
 save_sci <- function(plot,
                      filename,
                      width = c("single", "double"),
@@ -107,7 +145,7 @@ save_sci <- function(plot,
   invisible(out)
 }
 
-## ---- 2. Part A: the Gibbs sampler -----------------------------------------
+## ---- 3. Part A: Gibbs sampler implementation ------------------------------
 # Full-conditional Gibbs sampler for the 2-component Gaussian mixture.
 rgibbs_mix <- function(y,
                        n_iter = 5000,
@@ -240,19 +278,16 @@ rgibbs_mix <- function(y,
   )
 }
 
-
-## ---- 4. Part B: simulation study ------------------------------------------
-# Two settings: clearly separated vs substantially overlapping components
+## ---- 4. Part B: simulation settings and parameter recovery ----------------
+# ---- 4.1 Separated and overlapping simulation settings ---------------------
 n <- 500
 set.seed(20261016)
 z_true <- rbinom(n, 1, 0.5)
 y_sep <- ifelse(z_true == 1, rnorm(n, -2, 1), rnorm(n, 2, 1))    # mu = +/- 2
 y_ov  <- ifelse(z_true == 1, rnorm(n, -0.5, 1), rnorm(n, 0.5, 1))  # mu = +/- 0.5
 
-# Three chains from meaningfully different starting values
+# ---- 4.2 Run chains from different initial values --------------------------
 inits <- list(
-  # k-means start
-  km = NULL,
   # swapped labels
   swap   = list(
     mu1 = 2,
@@ -298,7 +333,7 @@ chains_ov  <- run_chains(y_ov,
                          burn = 15000,
                          seed_base = 200)
 
-# --- relabel by ordering the means (identifiability restriction) -----------
+# ---- 4.3 Posterior relabelling after sampling ------------------------------
 relabel_chain <- function(ch) {
   s <- ch$samples
   flip <- s$mu1 > s$mu2
@@ -318,7 +353,7 @@ pool_relabelled <- function(chains) {
 rl_sep <- pool_relabelled(chains_sep)
 rl_ov  <- pool_relabelled(chains_ov)
 
-# --- posterior allocation probabilities (thinned) --------------------------
+# ---- 4.4 Posterior allocation uncertainty ----------------------------------
 alloc_post <- function(ch, y, thin = 1) {
   if (!scalar_numeric(thin) ||
       thin < 1 || thin != floor(thin))
@@ -346,7 +381,7 @@ allocation_table <- function(y, p) {
     observation = seq_along(y),
     y = y,
     p_low = p,
-    ambiguous_02_08 = p > .2 & p < .8,
+    ambiguous_02_08 = p > 0.2 & p < 0.8,
     entropy = -safe * log(safe) - (1 - safe) * log1p(-safe)
   )
 }
@@ -355,30 +390,30 @@ p_ov  <- alloc_chains(chains_ov, y_ov)
 alloc_sep <- allocation_table(y_sep, p_sep)
 alloc_ov <- allocation_table(y_ov, p_ov)
 write.csv(alloc_sep,
-          file.path(table_dir, "allocations_separated.csv"),
+          file.path(table_dir, "task2_separated_allocations.csv"),
           row.names = FALSE)
 write.csv(alloc_ov,
-          file.path(table_dir, "allocations_overlap.csv"),
+          file.path(table_dir, "task2_overlap_allocations.csv"),
           row.names = FALSE)
 amb_sep <- mean(p_sep > 0.2 & p_sep < 0.8)
 amb_ov  <- mean(p_ov  > 0.2 & p_ov  < 0.8)
 
-# --- Table 1: recovery of the data-generating mixture -----------------------
+# ---- 4.5 Simulation parameter recovery summaries ---------------------------
 mk_rec <- function(truth, mu_lo, mu_hi, pi_lo, s2) {
   data.frame(
     Parameter = c("mu1 (lower)", "mu2 (upper)", "pi", "sigma2"),
     Truth = truth,
     Median = c(median(mu_lo), median(mu_hi), median(pi_lo), median(s2)),
     lo = c(
-      quantile(mu_lo, .025),
-      quantile(mu_hi, .025),
-      quantile(pi_lo, .025),
-      quantile(s2, .025)
+      quantile(mu_lo, 0.025),
+      quantile(mu_hi, 0.025),
+      quantile(pi_lo, 0.025),
+      quantile(s2, 0.025)
     ),
     hi = c(
-      quantile(mu_lo, .975),
-      quantile(mu_hi, .975),
-      quantile(pi_lo, .975),
+      quantile(mu_lo, 0.975),
+      quantile(mu_hi, 0.975),
+      quantile(pi_lo, 0.975),
       quantile(s2, .975)
     )
   )
@@ -393,14 +428,17 @@ tab_ov  <- mk_rec(c(-0.5, 0.5, 0.5, 1),
                   rl_ov$mu_hi,
                   rl_ov$pi_lo,
                   rl_ov$s2)
-write.csv(tab_sep,
-          file.path(table_dir, "table1_recovery_separated.csv"),
-          row.names = FALSE)
+write.csv(
+  tab_sep,
+  file.path(table_dir, "task2_separated_parameter_summary.csv"),
+  row.names = FALSE
+)
 write.csv(tab_ov,
-          file.path(table_dir, "table1_recovery_overlap.csv"),
+          file.path(table_dir, "task2_overlap_parameter_summary.csv"),
           row.names = FALSE)
 
-## ---- 5. Figure 1: trace plots ---------------------------------------------
+## ---- 5. Part B: trace plots before relabelling ----------------------------
+# ---- 5.1 Prepare simulation trace data -------------------------------------
 trace_frame <- function(chains, setting) {
   do.call(rbind, lapply(seq_along(chains), function(i) {
     ch <- chains[[i]]
@@ -427,6 +465,7 @@ tr <- rbind(trace_frame(chains_sep, "separated"),
   ))
 tr_long <- tidyr::pivot_longer(tr, c(mu1, mu2), names_to = "param", values_to = "value")
 
+# ---- 5.2 Plot means with their original component labels -------------------
 p_trace_sep <- ggplot(
   filter(tr_long, setting == "Separated components"),
   aes(
@@ -437,13 +476,13 @@ p_trace_sep <- ggplot(
     group = interaction(param, chain)
   )
 ) +
-  geom_line(linewidth = 0.25, alpha = 0.75) +
-  scale_color_manual(
+  geom_line(linewidth = 0.3, alpha = 0.85) +
+  scale_colour_discrete(
     name = NULL,
-    values = c(mu1 = "#D55E00", mu2 = "#0072B2"),
+    limits = c("mu1", "mu2"),
     labels = c(mu1 = expression(mu[1]), mu2 = expression(mu[2]))
   ) +
-  scale_linetype_discrete(name = "Chain") +
+  scale_linetype_discrete(name = "Chain", limits = c("swap", "spread")) +
   labs(x = NULL, y = "MCMC draw") +
   theme(legend.position = "none")
 
@@ -457,28 +496,39 @@ p_trace_ov <- ggplot(
     group = interaction(param, chain)
   )
 ) +
-  geom_line(linewidth = 0.25, alpha = 0.75) +
-  scale_color_manual(
+  geom_line(linewidth = 0.3, alpha = 0.85) +
+  scale_colour_discrete(
     name = NULL,
-    values = c(mu1 = "#D55E00", mu2 = "#0072B2"),
+    limits = c("mu1", "mu2"),
     labels = c(mu1 = expression(mu[1]), mu2 = expression(mu[2]))
   ) +
-  scale_linetype_discrete(name = "Chain") +
+  scale_linetype_discrete(name = "Chain", limits = c("swap", "spread")) +
   labs(x = "Iteration (post burn-in)", y = "MCMC draw") +
   theme(legend.position = "none")
 
-fig1 <- ggarrange(
+fig_simulation_raw_traces <- ggarrange(
   p_trace_sep,
   p_trace_ov,
   ncol = 1,
   labels = c("a", "b"),
-  font.label = list(size = 8, face = "bold"),
+  font.label = list(size = 12, face = "bold"),
+  label.x = 0,
+  label.y = 1,
+  hjust = 0,
+  vjust = 1,
   common.legend = TRUE,
-  legend = "right",
+  legend = "top",
   align = "v"
 )
+save_sci(
+  fig_simulation_raw_traces,
+  "task2_simulation_raw_traces",
+  width = "double",
+  height_mm = 170
+)
 
-## ---- 6. Table 2: diagnostics (ESS, Gelman-Rubin) -------------------------
+## ---- 6. Part B: MCMC convergence and efficiency diagnostics ---------------
+# ---- 6.1 Rank-normalised Rhat, ESS and MCSE --------------------------------
 diag_details <- function(chains, ordered = TRUE) {
   # Retain chain identities when calculating rank-normalised split Rhat and ESS.
   mats <- lapply(chains, function(ch) {
@@ -533,6 +583,7 @@ diag_summary <- function(chains,
     Rhat_max = max(d$Rhat)
   )
 }
+# ---- 6.2 Simulation diagnostics with ordered and original labels -----------
 diag_sep <- diag_details(chains_sep)
 diag_ov <- diag_details(chains_ov)
 diag_sep_raw <- diag_details(chains_sep, FALSE)
@@ -549,20 +600,20 @@ diag_detailed <- rbind(cbind(Setting = "Separated", diag_sep),
                        cbind(Setting = "Overlap", diag_ov))
 diag_raw_detailed <- rbind(cbind(Setting = "Separated", diag_sep_raw),
                            cbind(Setting = "Overlap", diag_ov_raw))
-write.csv(diag_tab, file.path(table_dir, "table2_diagnostics.csv"))
+write.csv(diag_tab,
+          file.path(table_dir, "task2_ordered_diagnostics_overview.csv"))
 write.csv(diag_raw_tab,
-          file.path(table_dir, "table2_diagnostics_raw.csv"))
-write.csv(
-  diag_detailed,
-  file.path(table_dir, "table2_diagnostics_detailed.csv"),
-  row.names = FALSE
-)
+          file.path(table_dir, "task2_raw_label_diagnostics_overview.csv"))
+write.csv(diag_detailed,
+          file.path(table_dir, "task2_ordered_diagnostics.csv"),
+          row.names = FALSE)
 write.csv(
   diag_raw_detailed,
-  file.path(table_dir, "table2_diagnostics_raw_detailed.csv"),
+  file.path(table_dir, "task2_raw_label_diagnostics.csv"),
   row.names = FALSE
 )
 
+# ---- 6.3 Diagnostic screening thresholds -----------------------------------
 diagnostic_screen <- function(d, setting) {
   good <- all(is.finite(d$Rhat)) && max(d$Rhat) <= 1.01 &&
     min(d$ESS) >= 400 && min(d$ESS_tail) >= 400
@@ -580,5 +631,432 @@ diagnostic_screen <- function(d, setting) {
 screen_tab <- rbind(diagnostic_screen(diag_sep, "Separated"),
                     diagnostic_screen(diag_ov, "Overlap"))
 
-## ---- 7. Part C: label switching -------------------------------------------
+## ---- 7. Part C: label switching and posterior summaries -------------------
+# ---- 7.1 Label changes and allocation ambiguity ----------------------------
+switches <- function(ch)
+  sum(diff(sign(ch$samples$mu1 - ch$samples$mu2)) != 0)
+sw_sep <- sapply(chains_sep, switches)
+sw_ov  <- sapply(chains_ov, switches)
+cat(sprintf(
+  "Label switches (per chain): separated %s, overlap %s\n",
+  paste(sw_sep, collapse = ","),
+  paste(sw_ov, collapse = ",")
+))
+cat(
+  sprintf(
+    "Ambiguous allocations (0.2-0.8): separated %.1f%%, overlap %.1f%%\n",
+    100 * amb_sep,
+    100 * amb_ov
+  )
+)
 
+# ---- 7.2 Compare summaries with original and ordered labels ----------------
+label_summary <- function(chains, setting) {
+  do.call(rbind, lapply(seq_along(chains), function(i) {
+    ch <- chains[[i]]
+    raw <- ch$samples
+    ord <- relabel_chain(ch)
+    data.frame(
+      Setting = setting,
+      Chain = names(chains)[i],
+      Switches = switches(ch),
+      Fraction_mu1_lower = mean(raw$mu1 < raw$mu2),
+      Raw_mu1 = median(raw$mu1),
+      Raw_mu2 = median(raw$mu2),
+      Raw_pi = median(raw$pi),
+      Ordered_mu_lo = median(ord$mu_lo),
+      Ordered_mu_hi = median(ord$mu_hi),
+      Ordered_pi_lo = median(ord$pi_lo)
+    )
+  }))
+}
+label_tab <- rbind(label_summary(chains_sep, "Separated"),
+                   label_summary(chains_ov, "Overlap"))
+# ---- 7.3 Posterior quantities invariant to component labels ----------------
+invariant_summary <- function(chains, setting) {
+  s <- do.call(rbind, lapply(chains, function(ch)
+    ch$samples))
+  x <- data.frame(
+    mixture_mean = s$pi * s$mu1 + (1 - s$pi) * s$mu2,
+    mixture_variance = s$s2 + s$pi * (1 - s$pi) * (s$mu1 - s$mu2)^2,
+    separation = abs(s$mu1 - s$mu2),
+    s2 = s$s2
+  )
+  data.frame(
+    Setting = setting,
+    Quantity = names(x),
+    Median = vapply(x, median, numeric(1)),
+    lo = vapply(x, quantile, numeric(1), probs = 0.025),
+    hi = vapply(x, quantile, numeric(1), probs = 0.975),
+    row.names = NULL
+  )
+}
+invariant_tab <- rbind(
+  invariant_summary(chains_sep, "Separated"),
+  invariant_summary(chains_ov, "Overlap")
+)
+
+# ---- 7.4 Simulated data: generating and fitted densities -------------------
+mixture_curve <- function(chains, y) {
+  s <- do.call(rbind, lapply(chains, function(ch)
+    ch$samples))
+  xs <- seq(min(y) - 0.15 * diff(range(y)),
+            max(y) + 0.15 * diff(range(y)),
+            length.out = 250)
+  data.frame(x = xs, fit = vapply(xs, function(x)
+    mean(
+      s$pi * dnorm(x, s$mu1, sqrt(s$s2)) + (1 - s$pi) * dnorm(x, s$mu2, sqrt(s$s2))
+    ), numeric(1)))
+}
+density_sep <- mixture_curve(chains_sep, y_sep)
+density_ov <- mixture_curve(chains_ov, y_ov)
+simulation_density_plot <- function(y, d, means) {
+  d$truth <- 0.5 * dnorm(d$x, means[1], 1) + 0.5 * dnorm(d$x, means[2], 1)
+  ggplot(data.frame(y = y), aes(y)) +
+    geom_histogram(
+      aes(y = after_stat(density), fill = "Observed"),
+      bins = 30,
+      alpha = 0.25,
+      colour = "white",
+      linewidth = .2
+    ) +
+    geom_line(
+      data = d,
+      aes(x, fit, colour = "Fitted"),
+      inherit.aes = FALSE,
+      linewidth = 0.6
+    ) +
+    geom_line(
+      data = d,
+      aes(x, truth, colour = "Generating"),
+      inherit.aes = FALSE,
+      linewidth = 0.5,
+      linetype = 2
+    ) +
+    scale_colour_discrete(name = NULL, limits = c("Fitted", "Generating")) +
+    scale_fill_discrete(guide = "none") +
+    labs(x = "Simulated observation", y = "Density")
+}
+fig_simulation_density <- ggarrange(
+  simulation_density_plot(y_sep, density_sep, c(-2, 2)),
+  simulation_density_plot(y_ov, density_ov, c(-0.5, 0.5)),
+  ncol = 2,
+  labels = c("a", "b"),
+  font.label = list(size = 12, face = "bold"),
+  label.x = 0,
+  label.y = 1,
+  hjust = 0,
+  vjust = 1,
+  common.legend = TRUE,
+  legend = "top"
+)
+save_sci(
+  fig_simulation_density,
+  "task2_simulation_density",
+  width = "double",
+  height_mm = 100
+)
+
+# ---- 7.5 Simulation traces after posterior relabelling ---------------------
+ordered_trace_frame <- function(chains, setting) {
+  do.call(rbind, lapply(seq_along(chains), function(i) {
+    ch <- chains[[i]]
+    s <- relabel_chain(ch)
+    keep <- unique(round(seq(1, nrow(s), length.out = min(1500, nrow(
+      s
+    )))))
+    do.call(rbind, lapply(c("mu_lo", "mu_hi", "pi_lo", "s2"), function(p)
+      data.frame(
+        setting = setting,
+        chain = names(chains)[i],
+        param = p,
+        iter = ch$burn + keep,
+        value = s[[p]][keep]
+      )))
+  }))
+}
+tr_ordered <- rbind(
+  ordered_trace_frame(chains_sep, "Separated"),
+  ordered_trace_frame(chains_ov, "Overlap")
+)
+tr_ordered$setting <- factor(tr_ordered$setting, levels = c("Separated", "Overlap"))
+fig_simulation_ordered_traces <- ggplot(tr_ordered, aes(iter, value, colour = chain)) +
+  geom_line(linewidth = 0.25, alpha = 0.85) + facet_grid(param ~ setting, scales = "free") +
+  scale_colour_discrete(name = "Chain", limits = c("swap", "spread")) +
+  labs(x = "Iteration (post burn-in)", y = "Ordered parameter")
+save_sci(
+  fig_simulation_ordered_traces,
+  "task2_simulation_ordered_traces",
+  width = "double",
+  height_mm = 180
+)
+
+## ---- 8. Part D: Old Faithful analysis -------------------------------------
+# ---- 8.1 Faithful data and chain initialisation ----------------------------
+data(faithful, package = "datasets")
+y_faith <- faithful$eruptions
+q_f <- as.numeric(quantile(y_faith, c(0.2, 0.8)))
+inits_f <- list(
+  swap = list(
+    mu1 = q_f[2],
+    mu2 = q_f[1],
+    pi = 0.8,
+    s2 = var(y_faith)
+  ),
+  spread = list(
+    mu1 = max(y_faith) + sd(y_faith),
+    mu2 = min(y_faith) - sd(y_faith),
+    pi = 0.5,
+    s2 = 2 * var(y_faith)
+  )
+)
+# ---- 8.2 Sample the Faithful posterior and calculate diagnostics -----------
+message("Old Faithful")
+chains_f <- run_chains(
+  y_faith,
+  inits_f,
+  n_iter = 20000,
+  burn = 5000,
+  seed_base = 300
+)
+chain_f <- chains_f[[1]]   # First raw chain retained for compatibility.
+rl_f <- pool_relabelled(chains_f)
+diag_f <- diag_details(chains_f)
+diag_f_raw <- diag_details(chains_f, FALSE)
+ess_f <- min(diag_f$ESS)
+p_faith_alloc <- alloc_chains(chains_f, y_faith)
+amb_faith <- mean(p_faith_alloc > 0.2 & p_faith_alloc < 0.8)
+alloc_f <- allocation_table(y_faith, p_faith_alloc)
+write.csv(alloc_f,
+          file.path(table_dir, "task2_faithful_allocations.csv"),
+          row.names = FALSE)
+
+# ---- 8.3 Combine diagnostics and label summaries across datasets -----------
+diag_tab <- rbind(diag_tab, Faithful = diag_summary(chains_f, details = diag_f))
+diag_raw_tab <- rbind(diag_raw_tab, Faithful = diag_summary(chains_f, FALSE, diag_f_raw))
+diag_detailed <- rbind(diag_detailed, cbind(Setting = "Faithful", diag_f))
+diag_raw_detailed <- rbind(diag_raw_detailed, cbind(Setting = "Faithful", diag_f_raw))
+screen_tab <- rbind(screen_tab, diagnostic_screen(diag_f, "Faithful"))
+label_tab <- rbind(label_tab, label_summary(chains_f, "Faithful"))
+invariant_tab <- rbind(invariant_tab, invariant_summary(chains_f, "Faithful"))
+write.csv(diag_tab,
+          file.path(table_dir, "task2_ordered_diagnostics_overview.csv"))
+write.csv(diag_raw_tab,
+          file.path(table_dir, "task2_raw_label_diagnostics_overview.csv"))
+write.csv(diag_detailed,
+          file.path(table_dir, "task2_ordered_diagnostics.csv"),
+          row.names = FALSE)
+write.csv(
+  diag_raw_detailed,
+  file.path(table_dir, "task2_raw_label_diagnostics.csv"),
+  row.names = FALSE
+)
+write.csv(screen_tab,
+          file.path(table_dir, "task2_diagnostic_screen.csv"),
+          row.names = FALSE)
+write.csv(label_tab,
+          file.path(table_dir, "task2_label_switching.csv"),
+          row.names = FALSE)
+write.csv(
+  invariant_tab,
+  file.path(table_dir, "task2_label_invariant_summary.csv"),
+  row.names = FALSE
+)
+
+# ---- 8.4 Faithful posterior parameter summary --------------------------------
+tab_f <- data.frame(
+  Parameter = c("mu (short)", "mu (long)", "pi (short)", "sigma2"),
+  Median = c(
+    median(rl_f$mu_lo),
+    median(rl_f$mu_hi),
+    median(rl_f$pi_lo),
+    median(rl_f$s2)
+  ),
+  lo = c(
+    quantile(rl_f$mu_lo, 0.025),
+    quantile(rl_f$mu_hi, 0.025),
+    quantile(rl_f$pi_lo, 0.025),
+    quantile(rl_f$s2, 0.025)
+  ),
+  hi = c(
+    quantile(rl_f$mu_lo, 0.975),
+    quantile(rl_f$mu_hi, 0.975),
+    quantile(rl_f$pi_lo, 0.975),
+    quantile(rl_f$s2, 0.975)
+  ),
+  check.names = FALSE
+)
+write.csv(tab_f,
+          file.path(table_dir, "task2_faithful_parameter_summary.csv"),
+          row.names = FALSE)
+
+# ---- 8.5 Observed Faithful data and fitted mixture density -----------------
+s <- do.call(rbind, lapply(chains_f, function(ch)
+  ch$samples))
+xs <- seq(min(y_faith), max(y_faith), length.out = 400)
+f_pred <- sapply(xs, function(x)
+  mean(s$pi * dnorm(x, s$mu1, sqrt(s$s2)) + (1 - s$pi) * dnorm(x, s$mu2, sqrt(s$s2))))
+fig_faithful_density <- ggplot(data.frame(y = y_faith), aes(y)) +
+  geom_histogram(
+    aes(y = after_stat(density), fill = "Observed"),
+    bins = 30,
+    alpha = 0.25,
+    colour = "white",
+    linewidth = 0.2
+  ) +
+  geom_line(data = data.frame(x = xs, y = f_pred),
+            aes(x, y, colour = "Fitted"),
+            linewidth = 0.6) +
+  scale_colour_discrete(limits = "Fitted", guide = "none") +
+  scale_fill_discrete(guide = "none") +
+  labs(x = "Eruption duration (min)", y = "Density")
+save_sci(
+  fig_faithful_density,
+  "task2_faithful_density",
+  width = "double",
+  height_mm = 90
+)
+
+# ---- 8.6 Posterior allocation uncertainty across datasets ------------------
+allocation_plot <- function(a, xlab) {
+  ggplot(a, aes(y, p_low)) +
+    geom_hline(
+      yintercept = c(0.2, 0.8),
+      linetype = 3,
+      colour = "grey60",
+      linewidth = 0.25
+    ) +
+    geom_point(aes(colour = "Allocation"),
+               size = 1.1,
+               alpha = 0.8) +
+    scale_colour_discrete(guide = "none") +
+    scale_y_continuous(limits = c(0, 1)) + labs(x = xlab, y = "Pr(lower component | data)")
+}
+fig_allocation_probabilities <- ggarrange(
+  allocation_plot(alloc_sep, "Separated simulation"),
+  allocation_plot(alloc_ov, "Overlapping simulation"),
+  allocation_plot(alloc_f, "Eruption duration (min)"),
+  ncol = 1,
+  labels = c("a", "b", "c"),
+  font.label = list(size = 12, face = "bold"),
+  label.x = 0,
+  label.y = 1,
+  hjust = 0,
+  vjust = 1,
+  align = "v"
+)
+save_sci(
+  fig_allocation_probabilities,
+  "task2_allocation_probabilities",
+  width = "double",
+  height_mm = 190
+)
+
+# ---- 8.7 Faithful traces after posterior relabelling -----------------------
+tr_f <- ordered_trace_frame(chains_f, "Faithful")
+fig_faithful_ordered_traces <- ggplot(tr_f, aes(iter, value, colour = chain)) +
+  geom_line(linewidth = 0.25, alpha = 0.85) + facet_wrap(~ param, scales = "free_y", ncol = 2) +
+  scale_colour_discrete(name = "Chain", limits = c("swap", "spread")) +
+  labs(x = "Iteration (post burn-in)", y = "Ordered parameter")
+save_sci(
+  fig_faithful_ordered_traces,
+  "task2_faithful_ordered_traces",
+  width = "double",
+  height_mm = 140
+)
+invisible(gc())
+
+## ---- 9. Save outputs and display the analysis summary ---------------------
+# ---- 9.1 Record starting values, seeds and sampling settings ---------------
+all_chains <- list(Separated = chains_sep,
+                   Overlap = chains_ov,
+                   Faithful = chains_f)
+initial_values <- do.call(rbind, lapply(names(all_chains), function(nm)
+  do.call(rbind, lapply(seq_along(all_chains[[nm]]), function(i) {
+    ch <- all_chains[[nm]][[i]]
+    data.frame(
+      Setting = nm,
+      Chain = names(all_chains[[nm]])[i],
+      Seed = ch$seed,
+      as.list(ch$init_used),
+      Iterations = ch$n_iter,
+      Burn = ch$burn,
+      Sampler_seconds = ch$elapsed_seconds,
+      row.names = NULL
+    )
+  }))))
+write.csv(
+  initial_values,
+  file.path(table_dir, "task2_initial_values_and_seeds.csv"),
+  row.names = FALSE
+)
+# ---- 9.2 Save session information and posterior workspace ------------------
+writeLines(capture.output(sessionInfo()),
+           file.path(result_dir, "task2_sessionInfo.txt"))
+save(
+  chains_sep,
+  chains_ov,
+  chains_f,
+  rl_sep,
+  rl_ov,
+  diag_tab,
+  diag_raw_tab,
+  chain_f,
+  rl_f,
+  tab_sep,
+  tab_ov,
+  tab_f,
+  amb_sep,
+  amb_ov,
+  amb_faith,
+  ess_f,
+  diag_detailed,
+  diag_raw_detailed,
+  screen_tab,
+  initial_values,
+  label_tab,
+  invariant_tab,
+  p_sep,
+  p_ov,
+  p_faith_alloc,
+  alloc_sep,
+  alloc_ov,
+  alloc_f,
+  density_sep,
+  density_ov,
+  y_sep,
+  y_ov,
+  y_faith,
+  z_true,
+  sw_sep,
+  sw_ov,
+  file = file.path(result_dir, "task2_sim.RData")
+)
+
+# ---- 9.3 Print the analysis summary ----------------------------------------
+cat("\nTask 2 analysis finished.\n")
+cat(sprintf("Tables -> %s\n", normalizePath(table_dir)))
+cat(sprintf("Figures -> %s\n", normalizePath(figure_dir)))
+cat(sprintf("RData -> %s\n", normalizePath(
+  file.path(result_dir, "task2_sim.RData")
+)))
+cat(
+  sprintf(
+    "Key results: separated mu1/mu2 medians %.2f / %.2f; overlap %.2f / %.2f;\n",
+    median(rl_sep$mu_lo),
+    median(rl_sep$mu_hi),
+    median(rl_ov$mu_lo),
+    median(rl_ov$mu_hi)
+  )
+)
+print(screen_tab, row.names = FALSE)
+cat(
+  sprintf(
+    "faithful mu_short %.2f, mu_long %.2f, pi %.2f, sigma %.2f, minimum bulk ESS %.0f\n",
+    median(rl_f$mu_lo),
+    median(rl_f$mu_hi),
+    median(rl_f$pi_lo),
+    sqrt(median(rl_f$s2)),
+    ess_f
+  )
+)
