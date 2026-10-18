@@ -9,9 +9,11 @@
 # 17.10.2026: complete part B analysis and update helper functions.
 #             generated csv and PNG outputs are not included.
 #             part C in progress.
-# 18.10.2026: use global theme palettes; standardise section titles
+# 18.10.2026: use global theme palettes; standardize section titles
 #             and descriptive figure/table output names.
-#             reorder colours and enlarge text for report figures.
+#             reorder colors and enlarge text for report figures.
+# 19.10.2026: run two manually initialized chains, use PNG null devices,
+#             and add numerical summaries for the complete results report.
 # ============================================================================
 
 ## ---- 0. Locate the project root -------------------------------------------
@@ -64,7 +66,14 @@ dir.create(report_dir, recursive = T, showWarnings = F)
 
 ## ---- 2. Load packages and set the plotting style --------------------------
 # ---- 2.1 Required packages -------------------------------------------------
-pkgs <- c("tidyverse", "scales", "ggpubr", "coda", "ggsci", "posterior")
+pkgs <- c("ggplot2",
+          "dplyr",
+          "tidyr",
+          "scales",
+          "ggpubr",
+          "coda",
+          "ggsci",
+          "posterior")
 
 # get the names of all currently installed packages
 installed <- rownames(installed.packages())
@@ -80,6 +89,10 @@ if (length(to_install) > 0) {
 # characer.only = TRUE lets library() accept a package name as a character string
 invisible(lapply(pkgs, library, character.only = TRUE))
 
+# Use PNG for both temporary plotting devices used when arranging plots.
+options(ggpubr.null_device = cowplot::png_null_device)
+cowplot::set_null_device("png")
+
 # ---- 2.2 Global plotting theme and default palettes ------------------------
 # Theme palette settings require ggplot2 >= 4.0.0.
 # Mapped colour/fill aesthetics below inherit these palettes.
@@ -94,6 +107,7 @@ plot_palette <- c(
   "#F0E442",
   "#000000"
 )
+# Use the default sans-serif font provided by the graphics device.
 theme_set(
   theme_pubr(base_size = 11, base_family = "sans") +
     theme(
@@ -101,15 +115,16 @@ theme_set(
       palette.fill.discrete = plot_palette,
       axis.text = element_text(size = 10, colour = "#202020"),
       axis.title = element_text(size = 11),
-      axis.line = element_line(linewidth = 0.3),
-      axis.ticks = element_line(linewidth = 0.3),
+      axis.line = element_line(linewidth = .3),
+      axis.ticks = element_line(linewidth = .3),
       legend.text = element_text(size = 10),
       legend.title = element_text(size = 10),
       legend.key.width = grid::unit(8, "mm"),
       strip.text = element_text(size = 10, face = "bold"),
       strip.background = element_rect(
         fill = "grey96",
-        colour = "#202020"
+        colour = "grey75",
+        linewidth = .3
       ),
       plot.margin = margin(8, 8, 8, 8)
     )
@@ -297,8 +312,8 @@ inits <- list(
   ),
   # spread means
   spread = list(
-    mu1 = 4,
-    mu2 = -4,
+    mu1 = -4,
+    mu2 = 4,
     pi = 0.5,
     s2 = 4
   )
@@ -381,7 +396,7 @@ allocation_table <- function(y, p) {
     observation = seq_along(y),
     y = y,
     p_low = p,
-    ambiguous_02_08 = p > 0.2 & p < 0.8,
+    ambiguous_02_08 = p > .2 & p < .8,
     entropy = -safe * log(safe) - (1 - safe) * log1p(-safe)
   )
 }
@@ -405,15 +420,15 @@ mk_rec <- function(truth, mu_lo, mu_hi, pi_lo, s2) {
     Truth = truth,
     Median = c(median(mu_lo), median(mu_hi), median(pi_lo), median(s2)),
     lo = c(
-      quantile(mu_lo, 0.025),
-      quantile(mu_hi, 0.025),
-      quantile(pi_lo, 0.025),
-      quantile(s2, 0.025)
+      quantile(mu_lo, .025),
+      quantile(mu_hi, .025),
+      quantile(pi_lo, .025),
+      quantile(s2, .025)
     ),
     hi = c(
-      quantile(mu_lo, 0.975),
-      quantile(mu_hi, 0.975),
-      quantile(pi_lo, 0.975),
+      quantile(mu_lo, .975),
+      quantile(mu_hi, .975),
+      quantile(pi_lo, .975),
       quantile(s2, .975)
     )
   )
@@ -686,8 +701,8 @@ invariant_summary <- function(chains, setting) {
     Setting = setting,
     Quantity = names(x),
     Median = vapply(x, median, numeric(1)),
-    lo = vapply(x, quantile, numeric(1), probs = 0.025),
-    hi = vapply(x, quantile, numeric(1), probs = 0.975),
+    lo = vapply(x, quantile, numeric(1), probs = .025),
+    hi = vapply(x, quantile, numeric(1), probs = .975),
     row.names = NULL
   )
 }
@@ -700,8 +715,8 @@ invariant_tab <- rbind(
 mixture_curve <- function(chains, y) {
   s <- do.call(rbind, lapply(chains, function(ch)
     ch$samples))
-  xs <- seq(min(y) - 0.15 * diff(range(y)),
-            max(y) + 0.15 * diff(range(y)),
+  xs <- seq(min(y) - .15 * diff(range(y)),
+            max(y) + .15 * diff(range(y)),
             length.out = 250)
   data.frame(x = xs, fit = vapply(xs, function(x)
     mean(
@@ -711,12 +726,12 @@ mixture_curve <- function(chains, y) {
 density_sep <- mixture_curve(chains_sep, y_sep)
 density_ov <- mixture_curve(chains_ov, y_ov)
 simulation_density_plot <- function(y, d, means) {
-  d$truth <- 0.5 * dnorm(d$x, means[1], 1) + 0.5 * dnorm(d$x, means[2], 1)
+  d$truth <- .5 * dnorm(d$x, means[1], 1) + .5 * dnorm(d$x, means[2], 1)
   ggplot(data.frame(y = y), aes(y)) +
     geom_histogram(
       aes(y = after_stat(density), fill = "Observed"),
       bins = 30,
-      alpha = 0.25,
+      alpha = .25,
       colour = "white",
       linewidth = .2
     ) +
@@ -724,13 +739,13 @@ simulation_density_plot <- function(y, d, means) {
       data = d,
       aes(x, fit, colour = "Fitted"),
       inherit.aes = FALSE,
-      linewidth = 0.6
+      linewidth = .6
     ) +
     geom_line(
       data = d,
       aes(x, truth, colour = "Generating"),
       inherit.aes = FALSE,
-      linewidth = 0.5,
+      linewidth = .5,
       linetype = 2
     ) +
     scale_colour_discrete(name = NULL, limits = c("Fitted", "Generating")) +
@@ -739,7 +754,7 @@ simulation_density_plot <- function(y, d, means) {
 }
 fig_simulation_density <- ggarrange(
   simulation_density_plot(y_sep, density_sep, c(-2, 2)),
-  simulation_density_plot(y_ov, density_ov, c(-0.5, 0.5)),
+  simulation_density_plot(y_ov, density_ov, c(-.5, .5)),
   ncol = 2,
   labels = c("a", "b"),
   font.label = list(size = 12, face = "bold"),
@@ -781,7 +796,7 @@ tr_ordered <- rbind(
 )
 tr_ordered$setting <- factor(tr_ordered$setting, levels = c("Separated", "Overlap"))
 fig_simulation_ordered_traces <- ggplot(tr_ordered, aes(iter, value, colour = chain)) +
-  geom_line(linewidth = 0.25, alpha = 0.85) + facet_grid(param ~ setting, scales = "free") +
+  geom_line(linewidth = .25, alpha = .85) + facet_grid(param ~ setting, scales = "free") +
   scale_colour_discrete(name = "Chain", limits = c("swap", "spread")) +
   labs(x = "Iteration (post burn-in)", y = "Ordered parameter")
 save_sci(
@@ -795,18 +810,18 @@ save_sci(
 # ---- 8.1 Faithful data and chain initialisation ----------------------------
 data(faithful, package = "datasets")
 y_faith <- faithful$eruptions
-q_f <- as.numeric(quantile(y_faith, c(0.2, 0.8)))
+q_f <- as.numeric(quantile(y_faith, c(.2, .8)))
 inits_f <- list(
   swap = list(
     mu1 = q_f[2],
     mu2 = q_f[1],
-    pi = 0.8,
+    pi = .8,
     s2 = var(y_faith)
   ),
   spread = list(
-    mu1 = max(y_faith) + sd(y_faith),
-    mu2 = min(y_faith) - sd(y_faith),
-    pi = 0.5,
+    mu1 = min(y_faith) - sd(y_faith),
+    mu2 = max(y_faith) + sd(y_faith),
+    pi = .5,
     s2 = 2 * var(y_faith)
   )
 )
@@ -863,7 +878,7 @@ write.csv(
   row.names = FALSE
 )
 
-# ---- 8.4 Faithful posterior parameter summary --------------------------------
+# ---- 8.4 Faithful posterior parameter summary ------------------------------
 tab_f <- data.frame(
   Parameter = c("mu (short)", "mu (long)", "pi (short)", "sigma2"),
   Median = c(
@@ -873,16 +888,16 @@ tab_f <- data.frame(
     median(rl_f$s2)
   ),
   lo = c(
-    quantile(rl_f$mu_lo, 0.025),
-    quantile(rl_f$mu_hi, 0.025),
-    quantile(rl_f$pi_lo, 0.025),
-    quantile(rl_f$s2, 0.025)
+    quantile(rl_f$mu_lo, .025),
+    quantile(rl_f$mu_hi, .025),
+    quantile(rl_f$pi_lo, .025),
+    quantile(rl_f$s2, .025)
   ),
   hi = c(
-    quantile(rl_f$mu_lo, 0.975),
-    quantile(rl_f$mu_hi, 0.975),
-    quantile(rl_f$pi_lo, 0.975),
-    quantile(rl_f$s2, 0.975)
+    quantile(rl_f$mu_lo, .975),
+    quantile(rl_f$mu_hi, .975),
+    quantile(rl_f$pi_lo, .975),
+    quantile(rl_f$s2, .975)
   ),
   check.names = FALSE
 )
@@ -900,7 +915,7 @@ fig_faithful_density <- ggplot(data.frame(y = y_faith), aes(y)) +
   geom_histogram(
     aes(y = after_stat(density), fill = "Observed"),
     bins = 30,
-    alpha = 0.25,
+    alpha = .25,
     colour = "white",
     linewidth = 0.2
   ) +
@@ -921,14 +936,14 @@ save_sci(
 allocation_plot <- function(a, xlab) {
   ggplot(a, aes(y, p_low)) +
     geom_hline(
-      yintercept = c(0.2, 0.8),
+      yintercept = c(.2, .8),
       linetype = 3,
       colour = "grey60",
-      linewidth = 0.25
+      linewidth = .25
     ) +
     geom_point(aes(colour = "Allocation"),
                size = 1.1,
-               alpha = 0.8) +
+               alpha = .8) +
     scale_colour_discrete(guide = "none") +
     scale_y_continuous(limits = c(0, 1)) + labs(x = xlab, y = "Pr(lower component | data)")
 }
@@ -955,14 +970,14 @@ save_sci(
 # ---- 8.7 Faithful traces after posterior relabelling -----------------------
 tr_f <- ordered_trace_frame(chains_f, "Faithful")
 fig_faithful_ordered_traces <- ggplot(tr_f, aes(iter, value, colour = chain)) +
-  geom_line(linewidth = 0.25, alpha = 0.85) + facet_wrap(~ param, scales = "free_y", ncol = 2) +
+  geom_line(linewidth = .25, alpha = .85) + facet_wrap(~ param, scales = "free_y", ncol = 2) +
   scale_colour_discrete(name = "Chain", limits = c("swap", "spread")) +
   labs(x = "Iteration (post burn-in)", y = "Ordered parameter")
 save_sci(
   fig_faithful_ordered_traces,
   "task2_faithful_ordered_traces",
   width = "double",
-  height_mm = 140
+  height_mm = 125
 )
 invisible(gc())
 
@@ -990,7 +1005,116 @@ write.csv(
   file.path(table_dir, "task2_initial_values_and_seeds.csv"),
   row.names = FALSE
 )
-# ---- 9.2 Save session information and posterior workspace ------------------
+# ---- 9.2 Additional summaries for the complete results report --------------
+chain_parameter_summary <- function(chains, setting) {
+  do.call(rbind, lapply(names(chains), function(nm) {
+    s <- relabel_chain(chains[[nm]])[, c("mu_lo", "mu_hi", "pi_lo", "s2")]
+    data.frame(
+      Setting = setting,
+      Chain = nm,
+      Parameter = names(s),
+      Mean = vapply(s, mean, numeric(1)),
+      Median = vapply(s, median, numeric(1)),
+      SD = vapply(s, sd, numeric(1)),
+      lo = vapply(s, quantile, numeric(1), probs = .025),
+      hi = vapply(s, quantile, numeric(1), probs = .975),
+      row.names = NULL
+    )
+  }))
+}
+chain_parameter_tab <- do.call(rbind, lapply(names(all_chains), function(nm)
+  chain_parameter_summary(all_chains[[nm]], nm)))
+write.csv(
+  chain_parameter_tab,
+  file.path(table_dir, "task2_chain_parameter_summary.csv"),
+  row.names = FALSE
+)
+
+allocation_summary <- data.frame(
+  Setting = c("Separated", "Overlap", "Faithful"),
+  N = c(length(y_sep), length(y_ov), length(y_faith)),
+  Ambiguous_count = c(
+    sum(p_sep > .2 & p_sep < .8),
+    sum(p_ov > .2 & p_ov < .8),
+    sum(p_faith_alloc > .2 & p_faith_alloc < .8)
+  ),
+  Ambiguous_fraction = c(amb_sep, amb_ov, amb_faith),
+  Mean_entropy = c(
+    mean(alloc_sep$entropy),
+    mean(alloc_ov$entropy),
+    mean(alloc_f$entropy)
+  ),
+  MAP_accuracy = c(mean((p_sep >= .5) == z_true), mean((p_ov >= .5) == z_true), NA_real_),
+  Brier_score = c(mean((p_sep - z_true)^2), mean((p_ov - z_true)^2), NA_real_)
+)
+write.csv(
+  allocation_summary,
+  file.path(table_dir, "task2_allocation_summary.csv"),
+  row.names = FALSE
+)
+
+occupancy_tab <- do.call(rbind, lapply(names(all_chains), function(nm)
+  do.call(rbind, lapply(names(all_chains[[nm]]), function(cn) {
+    ch <- all_chains[[nm]][[cn]]
+    s <- ch$samples
+    data.frame(
+      Setting = nm,
+      Chain = cn,
+      Empty_component_fraction = mean(s$n1 == 0 |
+                                        s$n1 == ch$n),
+      Extreme_weight_fraction = mean(s$pi < .01 |
+                                       s$pi > .99)
+    )
+  }))))
+write.csv(occupancy_tab,
+          file.path(table_dir, "task2_component_occupancy.csv"),
+          row.names = FALSE)
+
+invariant_diagnostics <- function(chains, setting) {
+  mats <- lapply(chains, function(ch) {
+    s <- ch$samples
+    cbind(
+      mixture_mean = s$pi * s$mu1 + (1 - s$pi) * s$mu2,
+      mixture_variance = s$s2 + s$pi * (1 - s$pi) * (s$mu1 - s$mu2)^2,
+      separation = abs(s$mu1 - s$mu2)
+    )
+  })
+  arr <- array(NA_real_,
+               c(nrow(mats[[1]]), length(mats), 3),
+               dimnames = list(NULL, names(chains), colnames(mats[[1]])))
+  for (i in seq_along(mats))
+    arr[, i, ] <- mats[[i]]
+  d <- as.data.frame(
+    posterior::summarise_draws(
+      posterior::as_draws_array(arr),
+      "mean",
+      "median",
+      "sd",
+      "rhat",
+      "ess_bulk",
+      "ess_tail",
+      "mcse_mean"
+    )
+  )
+  names(d) <- c("Quantity",
+                "Mean",
+                "Median",
+                "SD",
+                "Rhat",
+                "ESS",
+                "ESS_tail",
+                "MCSE")
+  cbind(Setting = setting, d)
+}
+invariant_diag_tab <- do.call(rbind, lapply(names(all_chains), function(nm)
+  invariant_diagnostics(all_chains[[nm]], nm)))
+write.csv(
+  invariant_diag_tab,
+  file.path(table_dir, "task2_label_invariant_diagnostics.csv"),
+  row.names = FALSE
+)
+
+# ---- 9.3 Save session information and posterior workspace ------------------
 writeLines(capture.output(sessionInfo()),
            file.path(result_dir, "task2_sessionInfo.txt"))
 save(
@@ -1033,7 +1157,7 @@ save(
   file = file.path(result_dir, "task2_sim.RData")
 )
 
-# ---- 9.3 Print the analysis summary ----------------------------------------
+# ---- 9.4 Print the analysis summary ----------------------------------------
 cat("\nTask 2 analysis finished.\n")
 cat(sprintf("Tables -> %s\n", normalizePath(table_dir)))
 cat(sprintf("Figures -> %s\n", normalizePath(figure_dir)))
