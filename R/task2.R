@@ -668,7 +668,7 @@ save_sci(
   fig_simulation_ordered_traces,
   "task2_simulation_ordered_traces",
   width = "double",
-  height_mm = 180
+  height_mm = 120
 )
 
 ## ---- 6. Part D: Old Faithful analysis -------------------------------------
@@ -842,7 +842,7 @@ save_sci(
   fig_faithful_ordered_traces,
   "task2_faithful_ordered_traces",
   width = "double",
-  height_mm = 125
+  height_mm = 120
 )
 invisible(gc())
 

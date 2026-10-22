@@ -406,7 +406,7 @@ perf_tab <- data.frame(
 kable(perf_tab, row.names = FALSE)
 ```
 
-The separated setting behaves as advertised. The minimum bulk ESS is `r round(performance$min_bulk_ess[performance$setting == "separated"], 0)` and $\hat{R}$ reaches at most `r round(performance$max_ordered_rhat[performance$setting == "separated"], 3)`. The overlapping setting is the more interesting one. Its raw (unrelabeled) chains are dominated by label switching. The raw ESS collapses and $\hat{R}$ rises far above 1. Full raw diagnostics are stored in `results/tables/task2_raw_label_diagnostics.csv`. After the order restriction the chains still mix slowly. The minimum bulk ESS is `r round(performance$min_bulk_ess[performance$setting == "overlap"], 0)` and $\hat{R}$ is `r round(performance$max_ordered_rhat[performance$setting == "overlap"], 2)`. But they have been run long enough for the diagnostic screen to pass.
+The separated setting behaves as advertised. The minimum bulk ESS is `r round(performance$min_bulk_ess[performance$setting == "Separated"], 0)` and $\hat{R}$ reaches at most `r round(performance$max_ordered_rhat[performance$setting == "Separated"], 3)`. The overlapping setting is the more interesting one. Its raw (unrelabeled) chains are dominated by label switching. The raw ESS collapses and $\hat{R}$ rises far above 1. Full raw diagnostics are stored in `results/tables/task2_raw_label_diagnostics.csv`. After the order restriction the chains still mix slowly. The minimum bulk ESS is `r round(performance$min_bulk_ess[performance$setting == "Overlap"], 0)` and $\hat{R}$ is `r round(performance$max_ordered_rhat[performance$setting == "Overlap"], 2)`. But they have been run long enough for the diagnostic screen to pass.
 
 ```{r}
 #| label: tbl-diag
@@ -484,7 +484,7 @@ cat(sprintf("Label switches (per chain): separated %s, overlap %s\n",
 
 ```{r}
 #| label: fig-ordered
-#| out-width: 65%
+#| out-width: "75%"
 #| fig-cap: "Order-restricted traces (two chains, one colour per chain) for the separated and the overlapping settings. After relabeling by $\\mu_{(1)} < \\mu_{(2)}$, the switching disappears and the chains converge to a common, interpretable parameterization; the overlapping chains still mix more slowly than the separated ones."
 knitr::include_graphics(file.path(root, "results/figures/task2_simulation_ordered_traces.png"))
 ```
