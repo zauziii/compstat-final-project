@@ -1,0 +1,3 @@
+"method","true_dimension","estimated_dimension","whitening_identity_error","direction_orthogonality_error","joint_off_diagonal_ratio"
+"fixed",5,5,3.21686843551549e-15,2.22044604925031e-15,0.071771606764641
+"stationary",5,5,3.21686843551549e-15,2.22044604925031e-15,0.071771606764641
