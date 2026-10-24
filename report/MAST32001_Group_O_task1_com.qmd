@@ -1,0 +1,652 @@
+---
+title: "MAST32001 Computational Statistics"
+subtitle: "Final Course Report, Winter Semester 2026"
+author:
+  - name: Kaiwei Fu
+  - name: Lingyu Wang
+  - name: Sami Pönkä
+  - name: Zhi Zhou
+date: today
+date-format: "D MMMM YYYY"
+lang: en
+engine: knitr
+
+format:
+  pdf:
+    pdf-engine: xelatex
+    documentclass: article
+    papersize: a4
+    fontsize: 11pt
+    linestretch: 1.05
+    geometry:
+      - top=14mm
+      - bottom=14mm
+      - left=12mm
+      - right=12mm
+    mainfont: "Latin Modern Roman"
+    sansfont: "Latin Modern Sans"
+    monofont: "Latin Modern Mono"
+    toc: false
+    number-sections: false
+    colorlinks: true
+    linkcolor: black
+    urlcolor: black
+    citecolor: black
+    fig-dpi: 600
+    fig-cap-location: bottom
+    tbl-cap-location: top
+    keep-tex: false
+    include-in-header:
+      text: |
+        \usepackage{booktabs}
+        \usepackage{caption}
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{microtype}
+        \usepackage{fancyhdr}
+        \captionsetup{font=small,labelfont=bf,labelsep=period,
+          justification=raggedright,singlelinecheck=false}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{0.45em}
+        \setlength{\emergencystretch}{2em}
+        \renewcommand{\arraystretch}{0.9}
+        \setlength{\tabcolsep}{5pt}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \fancyfoot[C]{\small\thepage}
+        \setlength{\footskip}{6mm}
+        \renewcommand{\headrulewidth}{0pt}
+        \renewcommand{\footrulewidth}{0pt}
+        \fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}
+          \renewcommand{\headrulewidth}{0pt}}
+
+execute:
+  echo: false
+  message: false
+  warning: false
+  error: false
+  cache: false
+
+fig-align: center
+fig-pos: H
+tbl-pos: H
+tbl-cap-location: top
+crossref:
+  fig-title: "Figure"
+  fig-prefix: "Figure"
+  tbl-title: "Table"
+  tbl-prefix: "Table"
+bibliography: refs2.bib
+reference-section-title: References
+csl: ieee.csl
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(knitr)
+
+# This QMD lives in the Task 1 project root (not in report/ as Task 2 does).
+root <- normalizePath("..")
+read_result <- function(filename) {
+  path <- file.path(root, "results", "tables", filename)
+  if (!file.exists(path))
+    stop("Missing results table: ", path,
+         ". Run the Task 1 analysis scripts before rendering the report.")
+  read.csv(path, check.names = FALSE, stringsAsFactors = FALSE)
+}
+fmt <- function(x, digits = 2) formatC(x, format = "f", digits = digits)
+display_table <- function(x, digits = 3) knitr::kable(x, format = "pipe",
+  digits = digits, row.names = FALSE, escape = FALSE)
+method_name <- function(x) ifelse(x == "fixed", "Fixed-block", "Stationary")
+
+# Render from saved results; no simulations or bootstrap fits run during rendering.
+dependence_summary <- read_result("task1_bootstrap_dependence_summary.csv")
+processes <- read_result("task1_setting1_processes.csv")
+simulation_summary <- read_result("task1_d_simulation_summary.csv")
+dependence_retention <- read_result("task1_e_dependence_retention.csv")
+```
+
+# Task 1: Ladle Estimation of Signal Dimension Using Time Series Bootstrap Methods
+
+We estimate the signal dimension of a multivariate time series using the Ladle criterion, which combines lagged dependence with bootstrap subspace stability. Simulations assess the effects of sample size, bootstrap method, and block length, followed by an application to the course dataset.
+
+We use the second-order source separation model
+
+$$
+x_t=\mu+\Omega z_t,\qquad E(z_t)=0,\qquad \operatorname{Cov}(z_t)=I_p,
+$$
+
+where $\Omega$ is a nonsingular mixing matrix and $z_t$ contains weakly stationary latent components. The first $q$ components are mutually independent signals with second-order serial dependence; the remaining $p-q$ components are white noise and independent of the signals. The signal dimension $q$ is therefore the number of latent signal components, rather than a count of observed variables. To identify all $q$ signals through lagged covariances, the selected lag set must include at least one lag with nonzero autocovariance for each signal.
+
+## Data Preprocessing and Characterization of Lagged Dependence
+
+Whitening gives the data an identity sample covariance matrix. Under a second-order source separation model, it transforms the mixing matrix into an orthogonal matrix, allowing signal directions to be estimated by orthogonal joint diagonalization. Lagged dependence remains and provides the information needed to identify these directions.
+
+### Whitening Transformation and Autocovariance Estimation
+
+Observations are stored as rows of an $n\times p$ matrix $X$. Each variable is centered using its full-sample column mean:
+
+$$
+X_c=X-\mathbf{1}_n\bar{x}^{\mathsf T},
+\qquad
+S_0=\frac{1}{n-1}X_c^{\mathsf T}X_c.
+$$
+
+If $S_0=VDV^{\mathsf T}$, the symmetric whitening matrix and the whitened data are
+
+$$
+W=S_0^{-1/2}=VD^{-1/2}V^{\mathsf T},
+\qquad Y=X_cW.
+$$
+
+To avoid unstable inverse square roots, whitening is stopped with an error if any eigenvalue is at most $10^{-10}$ times the largest eigenvalue, indicating a singular or nearly singular covariance matrix. The whitening matrix already accounts for differences in scale.
+
+For lag $h\geq1$, we estimate
+
+$$
+\widehat C_h
+=\frac{1}{n-h}\sum_{t=1}^{n-h}y_ty_{t+h}^{\mathsf T}.
+$$
+
+This estimator uses the full-sample means and averages over the $n-h$ available pairs of observations separated by lag $h$. The matrices used for joint diagonalization are symmetrized as
+$\widehat C_h^{(s)}=(\widehat C_h+\widehat C_h^{\mathsf T})/2$.
+
+```{r}
+#| label: code-task1-preprocessing
+#| echo: true
+#| eval: false
+whitening <- whiten_ts(X)
+Y <- whitening$whitened_data
+colnames(Y) <- paste0("Y", seq_len(ncol(Y)))
+
+S_Y <- stats::cov(Y)
+identity_error <- S_Y - diag(ncol(Y))
+lags <- 1:12
+C_list <- autocov_set(Y, lags = lags, symmetrize = TRUE)
+```
+
+### Preprocessing Results and Numerical Validation
+
+The supplied dataset contains $n=1000$ observations of $p=10$ variables. After centering and whitening,
+
+$$
+\max_j|\bar y_j|=6.49\times10^{-14},\qquad
+\max_{j,k}\left|\left\{\widehat{\operatorname{Cov}}(Y)-I_{10}\right\}_{jk}\right|
+=3.55\times10^{-15}.
+$$
+
+The sample means are zero and the sample covariance is the identity up to numerical precision. Lagged covariances remain nonzero, with Frobenius norms of $0.365$ and $0.558$ at lags 1 and 2.
+
+```{r}
+#| label: fig-task1-whitening
+#| out-width: "75%"
+#| fig-cap: "Contemporaneous correlation matrix before whitening (left) and covariance matrix after whitening (right). Colors indicate matrix entries; the identity pattern on the right confirms unit variances and negligible cross-covariances."
+knitr::include_graphics(file.path(root, "results/figures/task1_whitening_covariance.png"))
+```
+
+## Bootstrap Resampling That Preserves Temporal Dependence
+
+Independent row resampling destroys the temporal dependence needed for signal identification. We instead resample blocks of consecutive observations, preserving local temporal dependence and keeping all variables together within each observation.
+
+### Fixed-Block Bootstrap
+
+Sample $\lceil n/L\rceil$ starting positions uniformly with replacement from $\{1,\ldots,n-L+1\}$. Retain the $L$ consecutive observations from each position, concatenate the blocks, and truncate to $n$ rows. Dependence is preserved within each block.
+
+### Stationary Bootstrap
+
+The stationary bootstrap begins by sampling a starting index uniformly from $\{1,\ldots,n\}$. At each subsequent position, a new index is sampled uniformly with probability $r=1/L$; otherwise, the previous index is advanced by one, wrapping from $n$ back to 1. The block lengths $K$ therefore follow a geometric distribution:
+
+$$
+\Pr(K=k)=r(1-r)^{k-1},\qquad E(K)=\frac{1}{r}=L.
+$$
+
+Conditional on the observed data, the uniform starting index, random restarts, and circular continuation produce a stationary resampling process: its joint distributions are invariant to shifts in time. This property motivates the name stationary bootstrap. Fixed-length block concatenation generally does not preserve stationarity because block boundaries occur at predetermined positions.
+
+Across 100 bootstrap samples, the observed mean block lengths were 9.94, 20.20, and 40.94 for target values of 10, 20, and 40, respectively, close to their intended values.
+
+```{r}
+#| label: code-task1-block-bootstrap
+#| echo: true
+#| eval: false
+# Fixed-block bootstrap
+block_length <- as.integer(block_length)
+
+n_blocks <- ceiling(n / block_length)
+
+block_starts <- sample.int(
+  n - block_length + 1,
+  size = n_blocks,
+  replace = TRUE
+)
+
+indices <- unlist(
+  lapply(
+    block_starts,
+    function(start) {
+      seq.int(
+        from = start,
+        length.out = block_length
+      )
+    }
+  ),
+  use.names = FALSE
+)
+
+indices <- indices[seq_len(n)]
+X_boot <- X[indices, , drop = FALSE]
+
+# Stationary bootstrap
+restart_probability <- 1 / mean_block_length
+indices <- integer(n)
+new_block <- logical(n)
+
+indices[1] <- sample.int(n, size = 1)
+new_block[1] <- TRUE
+
+if (n >= 2) {
+  for (t in 2:n) {
+    if (runif(1) < restart_probability) {
+      indices[t] <- sample.int(n, size = 1)
+      new_block[t] <- TRUE
+    } else {
+      indices[t] <- if (indices[t - 1] == n) {
+        1L
+      } else {
+        indices[t - 1] + 1L
+      }
+    }
+  }
+}
+
+X_boot <- X[indices, , drop = FALSE]
+```
+
+### Dependence Preservation and Comparison of Block Lengths
+
+We compare preservation of the sample autocorrelation function (ACF), using independent and identically distributed (IID) resampling as a reference. @fig-task1-acf-comparison shows one representative variable.
+
+```{r}
+#| label: fig-task1-acf-comparison
+#| out-width: "75%"
+#| fig-cap: "Sample ACFs for the variable with the largest absolute lag-1 autocorrelation: original data and one sample from each bootstrap method. Both block methods use $L=20$; IID resampling largely removes the lagged dependence."
+knitr::include_graphics(file.path(root, "results/figures/task1_bootstrap_acf_comparison.png"))
+```
+
+Dependence preservation is assessed using the mean absolute difference between the autocorrelations of the original and bootstrap samples, averaged over all 10 variables and lags 1–20. Each row in @tbl-task1-acf-error summarizes 100 bootstrap samples.
+
+```{r}
+#| label: tbl-task1-acf-error
+#| tbl-cap: "Mean absolute ACF error; smaller values indicate better preservation of local dependence."
+method_order <- c("iid", paste0("fixed (L=", c(10, 20, 40), ")"),
+                  paste0("stationary (L=", c(10, 20, 40), ")"))
+acf_table <- dependence_summary[match(method_order, dependence_summary$method),
+                                 c("method", "mean_error", "standard_deviation")]
+acf_table$method <- sub("^iid$", "IID resampling", acf_table$method)
+acf_table$method <- sub("^fixed", "Fixed-block", acf_table$method)
+acf_table$method <- sub("^stationary", "Stationary", acf_table$method)
+names(acf_table) <- c("Method", "Mean error", "Standard deviation")
+display_table(acf_table, digits = 4)
+```
+
+IID resampling produces the largest mean error. Longer blocks reproduce the observed ACF more closely, although the errors are slightly more variable at $L=40$. Increasing block length preserves longer stretches of dependence but reduces the number of blocks resampled.
+
+```{r}
+#| label: fig-task1-acf-error
+#| out-width: "75%"
+#| fig-cap: "Boxplots of mean absolute ACF error across 100 bootstrap samples per setting, averaged over 10 variables and lags 1\u201320. Lower values indicate better preservation of the original ACFs."
+knitr::include_graphics(file.path(root, "results/figures/task1_bootstrap_acf_error.png"))
+```
+
+## Ladle Estimation Combining Signal Strength and Subspace Stability
+
+The Ladle criterion combines the strength of lagged dependence with the stability of estimated subspaces across bootstrap samples.
+
+### Signal Strength and the Scree Component $\phi$
+
+For a set of lags $\mathcal T$, an orthogonal matrix $U$ is used to approximately jointly diagonalize the autocovariance matrices of the whitened data. Component strengths are defined as
+
+$$
+s_j=\sum_{h\in\mathcal T}
+\left[
+\operatorname{diag}\!\left(U^{\mathsf T}\widehat C_h^{(s)}U\right)_j
+\right]^2,
+$$
+
+and ordered as $s_0\geq\cdots\geq s_{p-1}$. The normalized scree component is
+
+$$
+\phi(k)=\frac{s_k}{1+\sum_{\ell=0}^{p-1}s_\ell},
+\qquad k=0,\ldots,p-1.
+$$
+
+Larger strengths indicate stronger dependence at the selected lags, whereas noise directions should have strengths close to zero. For multiple lags, we obtain $U$ using `JADE::rjd`, then compute and order the component strengths.
+
+### Subspace Instability and the Bootstrap Component $f$
+
+Let $\widehat B_k$ and $B^*_{k,b}$ contain the first $k$ ordered directions from the original sample and the $b$th bootstrap sample, respectively. Subspace instability is measured by
+
+$$
+f_0(k)=\frac{1}{B}\sum_{b=1}^{B}
+\left\{1-\left|\det\!\left(\widehat B_k^{\mathsf T}B^*_{k,b}\right)\right|\right\},
+\quad k=1,\ldots,p-1,
+\qquad f_0(0)=0,
+$$
+
+and normalized as
+
+$$
+f(k)=\frac{f_0(k)}{1+\sum_{\ell=0}^{p-1}f_0(\ell)}.
+$$
+
+The absolute determinant measures agreement between the two $k$-dimensional subspaces and is invariant to sign changes in individual directions. A stable signal subspace has a small $f(k)$; including noise directions tends to increase subspace instability.
+
+### Combined Criterion and Dimension Estimation
+
+The Ladle criterion combines these two sources of information:
+
+$$
+g(k)=f(k)+\phi(k),\qquad
+\widehat q=\underset{k\in\{0,\ldots,p-1\}}{\arg\min}\;g(k).
+$$
+
+As $k$ increases, the scree component decreases, while the bootstrap component tends to rise when unstable noise directions enter the subspace. Minimizing their sum favors a dimension that captures the signal without including unstable directions.
+
+```{r}
+#| label: code-task1-ladle
+#| echo: true
+#| eval: false
+for (b in seq_len(n_boot)) {
+  X_boot <- switch(
+    bootstrap_method,
+    fixed = fixed_block_bootstrap(
+      X,
+      block_length = block_length
+    ),
+    stationary = stationary_bootstrap(
+      X,
+      mean_block_length = block_length
+    )
+  )
+
+  bootstrap_whitening <- whiten_ts(X_boot)
+
+  bootstrap_autocovariances <- autocov_set(
+    bootstrap_whitening$whitened_data,
+    lags = lags,
+    symmetrize = symmetrize
+  )
+
+  bootstrap_decomposition <- sos_decompose(
+    bootstrap_autocovariances
+  )
+
+  U_bootstrap[[b]] <- bootstrap_decomposition$directions
+
+  if (
+    progress &&
+    (b %% max(1, floor(n_boot / 10)) == 0 || b == n_boot)
+  ) {
+    message(
+      "Completed ",
+      b,
+      " of ",
+      n_boot,
+      " bootstrap samples."
+    )
+  }
+}
+
+f_result <- compute_f(
+  U_original,
+  U_bootstrap
+)
+
+f <- f_result$f
+g <- f + phi
+q_hat <- which.min(g) - 1L
+
+criterion <- data.frame(
+  dimension = 0:(ncol(X) - 1),
+  f = f,
+  phi = phi,
+  g = g
+)
+```
+
+### Implementation Validation with a Known Dimension
+
+We check the implementation using Setting 1 of Nordhausen and Virta: five Gaussian AR/MA signals and five Gaussian white noise series ($p=10$, $q=5$). With $n=1000$, lags 1–12, $B=100$, and $L=20$, both bootstrap methods recover $\widehat q=5$.
+
+Whitening and orthogonality errors are below $4\times10^{-15}$. After joint diagonalization, off-diagonal entries account for about $7.2\%$ of the squared matrix energy, consistent with approximate rather than exact diagonalization.
+
+```{r}
+#| label: fig-task1-ladle
+#| out-width: "75%"
+#| fig-cap: "Ladle curves for one Setting 1 dataset: bootstrap instability $f(k)$, scree component $\\phi(k)$, and their sum $g(k)$. Both methods minimize $g(k)$ at the true dimension $q=5$ ($n=1000$, $B=100$, $L=20$)."
+knitr::include_graphics(file.path(root, "results/figures/task1_ladle_criterion.png"))
+```
+
+## Simulation Study: Signal Dimension Recovery
+
+### Data-Generating Model and Experimental Design
+
+We use Setting 1 of Nordhausen and Virta, with $p=10$ components and a true signal dimension of $q=5$. The mixing matrix is the identity, so $x_t=z_t$, where the first five components are mutually independent Gaussian AR/MA processes and the remaining five are mutually independent Gaussian white noise series. The signal parameters are listed in @tbl-de-processes, using the following convention:
+
+$$
+z_{j,t}=\sum_{\ell=1}^{r_j}a_{j,\ell}z_{j,t-\ell}
+      +\varepsilon_{j,t}
+      +\sum_{\ell=1}^{s_j}b_{j,\ell}\varepsilon_{j,t-\ell},
+\qquad \varepsilon_{j,t}\overset{\mathrm{iid}}{\sim}N(0,1).
+$$
+
+Innovations are independent across components, and the five noise series are independent $N(0,1)$ white noise. Each data column is centered and scaled to unit sample variance before whitening, as in the implementation check.
+
+```{r}
+#| label: tbl-de-processes
+#| tbl-cap: "Signal processes in Setting 1. A dash indicates the absence of the corresponding AR or MA part."
+display_table(processes)
+```
+
+We use $n\in\{200,500,1000\}$, SOBI lags $\mathcal T=\{1,\ldots,12\}$, and both bootstrap methods with $L\in\{10,20,40\}$ (fixed or expected block length). These settings match the paper; its separate AMUSE comparison is outside our scope.
+
+For each sample size, we generate $R=100$ independent datasets and apply all six method–block length combinations, giving $1800$ fits with $B=100$ bootstrap samples each. This is smaller than the paper's $R=2000$, $B=200$ experiment and targets its qualitative findings at lower computational cost. Here, $R$ controls the precision of recovery rates across datasets; $B$ controls the Monte Carlo approximation within each fit.
+
+### Computational Procedure and Choice of Tuning Parameters
+
+For each dataset, we apply the following steps.
+
+1. Center and whiten the data, then compute symmetrized autocovariances at lags 1–12.
+2. Jointly diagonalize them using `JADE::rjd`, order directions by their strengths, and compute $\phi(k)$.
+3. Generate $B$ multivariate bootstrap samples using fixed blocks or the stationary bootstrap of Politis and Romano. Repeat centering, whitening, autocovariance estimation, diagonalization, and ordering for each sample.
+4. Compare the leading subspaces to compute $f(k)$, then record the dimension minimizing $g(k)=f(k)+\phi(k)$ over $k=0,\ldots,9$.
+
+```{r}
+#| label: code-task1-simulation-worker
+#| echo: true
+#| eval: false
+simulation_worker <- function(job) {
+  size_id <- match(job$sample_size, sample_sizes)
+  data_seed <- master_seed + size_id * 100000L + job$replicate
+  X <- simulate_setting1(job$sample_size, seed = data_seed)
+  rows <- vector("list", length(methods) * length(block_lengths))
+  index <- 0L
+  for (method in methods) {
+    for (block_length in block_lengths) {
+      index <- index + 1L
+      bootstrap_seed <- master_seed + 1000000L + size_id * 1000000L +
+        job$replicate * 10L + index
+      started <- proc.time()[["elapsed"]]
+      answer <- tryCatch({
+        fit <- ladle_fit(X, lags, n_boot = n_boot_simulation,
+                         bootstrap_method = method, block_length = block_length,
+                         seed = bootstrap_seed)
+        checks <- check_fit(fit)
+        list(q_hat = fit$q_hat, error = "", checks = checks,
+             criterion_gap = sort(fit$criterion$g)[2] - min(fit$criterion$g))
+      }, error = function(e) {
+        list(q_hat = NA_integer_, error = conditionMessage(e),
+             checks = c(NA_real_, NA_real_), criterion_gap = NA_real_)
+      })
+      rows[[index]] <- data.frame(
+        sample_size = job$sample_size, replicate = job$replicate,
+        method = method, block_length = block_length, n_boot = n_boot_simulation,
+        data_seed = data_seed, bootstrap_seed = bootstrap_seed,
+        true_dimension = true_dimension, estimated_dimension = answer$q_hat,
+        criterion_gap = answer$criterion_gap,
+        whitening_error = answer$checks[1], orthogonality_error = answer$checks[2],
+        elapsed_seconds = proc.time()[["elapsed"]] - started,
+        error = answer$error, row.names = NULL
+      )
+    }
+  }
+  do.call(rbind, rows)
+}
+```
+
+Short blocks break more lagged observation pairs: a fixed block of length $10$ cannot contain a lag-$12$ pair. Longer blocks preserve more dependence but leave fewer blocks to resample; for $n=200$ and $L=40$, only five fixed blocks are drawn.
+
+Data generation and bootstrap fitting use separate random seeds. Shared datasets allow paired comparisons across settings. After some preliminary runs reached the $1000$-iteration limit, we increased it to $10000$, keeping the joint diagonalization tolerance at $10^{-6}$. All $1800$ fits completed, with whitening and orthogonality errors below $3\times10^{-14}$ and $9\times10^{-15}$, respectively.
+
+### Evaluation Metrics and Monte Carlo Error
+
+For a fixed sample size, method, and block length, let $I_r=\mathbf 1\{\widehat q_r=5\}$. The estimated probability of correct selection and its Monte Carlo standard error are
+
+$$
+\widehat P=\frac{1}{R}\sum_{r=1}^{R}I_r,
+\qquad
+\widehat{\operatorname{MCSE}}(\widehat P)
+=\sqrt{\frac{\widehat P(1-\widehat P)}{R}}.
+$$
+
+With $R=100$, the MCSE is at most $0.05$. We report $95\%$ Wilson intervals, including at observed rates of $0$ or $1$, and dimension distributions to distinguish underestimation from overestimation.
+
+\Needspace{12\baselineskip}
+
+### Effect of Sample Size on Dimension Recovery
+
+```{r}
+#| label: tbl-de-recovery
+#| tbl-cap: "Percentage of replications selecting the true dimension $q=5$. Each value is based on $100$ independent datasets, with $B=100$ bootstrap samples per fit."
+recovery_table <- reshape(
+  simulation_summary[, c("method", "block_length", "sample_size", "correct_rate")],
+  idvar = c("method", "block_length"), timevar = "sample_size", direction = "wide")
+recovery_table <- recovery_table[order(recovery_table$method, recovery_table$block_length), ]
+size_columns <- paste0("correct_rate.", sort(unique(simulation_summary$sample_size)))
+recovery_table <- recovery_table[, c("method", "block_length", size_columns)]
+recovery_table[size_columns] <- 100 * recovery_table[size_columns]
+recovery_table$method <- method_name(recovery_table$method)
+names(recovery_table) <- c("Method", "$L$",
+                           paste0("$n=", sort(unique(simulation_summary$sample_size)), "$"))
+display_table(recovery_table, digits = 0)
+```
+
+@tbl-de-recovery and @fig-de-recovery show that sample size has the most pronounced effect. When $n=200$, only $0$–$1\%$ of replications select the correct dimension. Both underestimation and overestimation are common, occurring in $58$–$77\%$ and $22$–$42\%$ of replications, respectively. When $n=500$, recovery rates increase to $34$–$45\%$, with most remaining errors due to underestimation. When $n=1000$, every setting selects $q=5$ in $99$ replications and $q=4$ in one replication. The corresponding $95\%$ Wilson interval is $[94.6\%,99.8\%]$, consistent with a high recovery rate at this sample size.
+
+```{r}
+#| label: fig-de-recovery
+#| out-width: "75%"
+#| fig-cap: "Estimated probability of selecting $q=5$ from 100 simulated datasets per sample size. Panels correspond to block lengths; blue circles and green triangles denote fixed-block and stationary bootstrap results. Error bars are $95\\%$ Wilson intervals."
+knitr::include_graphics(file.path(root, "results/figures/task1_d_recovery_probability.png"))
+```
+
+### Bootstrap Method, Block Length, and the Distribution of Estimation Errors
+
+Method differences are smaller than sample-size effects. At $n=500$, stationary minus fixed-block recovery rates are $-2$, $3$, and $7$ percentage points for $L=10,20,40$, with paired MCSEs of $3.5$, $3.3$, and $3.8$ points. The MCSEs use within-dataset differences $I_{r,S}-I_{r,F}$ to account for pairing. These results do not establish a clear advantage for either method; at $n=1000$, all settings give identical selections.
+
+```{r}
+#| label: fig-de-distribution
+#| out-width: "75%"
+#| fig-cap: "Stacked proportions of estimated dimensions across 100 Setting 1 datasets per sample size. F and S denote fixed-block and stationary bootstrap methods; numbers indicate $L$. Light blue represents the true dimension $q=5$."
+knitr::include_graphics(file.path(root, "results/figures/task1_d_dimension_distribution.png"))
+```
+
+The distributions in @fig-de-distribution narrow around $q=5$ as series length increases, consistent with Nordhausen and Virta's qualitative findings. This evidence is limited to Setting 1 with $B=100$; it does not establish consistency or reproduce the full study.
+
+## Analysis of the Course Dataset: Dimension Estimation and Sensitivity to Block Length
+
+### Analysis Settings and Stability Assessment
+
+We analyze `timeseries.dat` ($n=1000$, $p=10$) using the same preprocessing, lags 1–12, and Ladle procedure as in the simulations. Both bootstrap methods use $L=10,20,40$. The primary choice, $L=20$, accommodates all selected lags within a block and yields $50$ fixed blocks; $L=10$ and $40$ assess block-length sensitivity.
+
+Each setting uses $B=500$ bootstrap samples and five independent random seeds. The resulting $30$ fits assess Monte Carlo stability for this dataset, not sampling uncertainty. We examine the criterion curves, selected dimensions, and gaps between the two lowest values of $g$.
+
+### Results Supporting a Three-Dimensional Signal Subspace
+
+At $L=20$ and $40$, both methods select $\widehat q=3$ in all five runs. At $L=10$, fixed blocks always select $2$, while stationary blocks select $2$ four times and $3$ once. The latter setting has a minimum criterion gap of about $0.0007$, indicating a near tie in at least one run. Thus, the three-dimensional estimate is stable with longer blocks but sensitive to short blocks.
+
+For the primary fixed-block fit with $L=20$ and the first seed,
+
+$$
+f(3)=0.04660,\qquad \phi(3)=0.01649,\qquad g(3)=0.06310.
+$$
+
+The next-best candidate is $k=2$, whose criterion value exceeds the minimum by $0.01278$. The first four ordered component strengths are approximately $0.400$, $0.345$, $0.141$, and $0.034$. The drop after the third direction supports a three-dimensional signal subspace, while the bootstrap term penalizes the instability introduced by additional weak directions.
+
+```{r}
+#| label: fig-de-components
+#| out-width: "75%"
+#| fig-cap: "Ladle components under the six settings for the course dataset, using the first seed for each setting. Vertical lines indicate the dimensions minimizing the criterion. Under the definition above, $\\phi(k)$ corresponds to the strength of the $(k+1)$th direction."
+knitr::include_graphics(file.path(root, "results/figures/task1_e_ladle_components.png"))
+```
+
+In @fig-de-components, $\phi$ depends only on the original sample and is unchanged across settings. Differences in selection arise from the bootstrap component $f$.
+
+### Sensitivity to Block Length and Its Explanation Through Dependence Structure
+
+```{r}
+#| label: fig-de-sensitivity
+#| out-width: "75%"
+#| fig-cap: "Total criterion $g(k)$ by block length for fixed-block (left) and stationary (right) bootstrap. Colors distinguish $L=10,20,40$; light curves show five individual seed runs and thick curves their means. Dimensions are selected separately for each run."
+knitr::include_graphics(file.path(root, "results/figures/task1_e_block_sensitivity.png"))
+```
+
+To explain the competition between $k=2$ and $3$ in @fig-de-sensitivity, we examine the ordered components
+
+$$
+\widehat Z=(X-\mathbf 1_n\bar x^{\mathsf T})\widehat W\widehat U.
+$$
+
+For the third component, the largest absolute sample autocorrelation over lags $1$–$12$ occurs at $h=8$, where the autocorrelation is approximately $0.287$. Dependence at this lag may be poorly preserved by short blocks.
+
+For fixed blocks, ignoring endpoint effects in a finite series, the proportion of lag-$h$ observation pairs lying within the same block is approximately $\max(1-h/L,0)$. For stationary blocks, the probability of proceeding for $h$ consecutive steps without restarting is $(1-1/L)^h$. At $h=8$, these quantities are
+
+```{r}
+#| label: tbl-de-retention
+#| tbl-cap: "Within-block retention at the dominant lag of the last selected signal component."
+retention_table <- data.frame(
+  Quantity = c("Fixed-block: within-block pair proportion", "Stationary: probability of no restart"),
+  check.names = FALSE)
+for (i in order(dependence_retention$block_length)) {
+  retention_table[[paste0("$L=", dependence_retention$block_length[i], "$")]] <- c(
+    dependence_retention$fixed_approximate_within_block_fraction[i],
+    dependence_retention$stationary_no_restart_probability[i])
+}
+display_table(retention_table, digits = 3)
+```
+
+These are measures of preserved ordering, not exact ACF attenuation factors or recovery probabilities. They suggest that short blocks weaken the dependence supporting the third direction, making its estimated subspace less stable. The more distinct minimum at $k=3$ with longer blocks is consistent with this explanation.
+
+```{r}
+#| label: fig-de-acf
+#| out-width: "75%"
+#| fig-cap: "Sample ACFs of the ordered components. The first three directions, identified as signals by the primary fit, are shown in blue. The dashed lines at $\\pm1.96/\\sqrt{1000}$ are descriptive white noise reference bands, not simultaneous confidence bounds that account for estimation of the directions."
+knitr::include_graphics(file.path(root, "results/figures/task1_e_component_acf.png"))
+```
+
+### Interpretation and Scope of the Results
+
+The primary fit identifies three latent linear combinations with serial dependence, whose ACFs show pronounced features at lags $2$, $5$, and $8$, respectively (@fig-de-acf). The remaining seven directions have weaker dependence at the selected lags.
+
+These directions are not a subset of the original variables, and the remaining components need not be independent, Gaussian, or free of nonlinear dependence. The interpretation assumes approximate stationarity and the second-order source separation model, and depends on the selected lags. Agreement at $L=20$ and $40$ supports three signals, but the unknown true dimension and sensitivity at $L=10$ limit the conclusion.
+
+
+# Task 2: Bayesian Mixture Models Using MCMC
+
+## Part A: Latent Variable Representation and the Gibbs Sampler
+
+## Part B: Simulation Study and Computational Performance
+
+## Part C: Label Switching and Identifiability
+
+## Part D: Application to Real Data
