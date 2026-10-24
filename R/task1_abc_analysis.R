@@ -184,7 +184,7 @@ covariance_plot <- ggplot(covariance_plot_data, aes(row, column, fill = value)) 
   scale_x_continuous(breaks = seq_len(ncol(X)), expand = c(0, 0)) +
   scale_y_continuous(breaks = seq_len(ncol(X)), expand = c(0, 0)) +
   coord_equal() + labs(x = "Variable", y = "Variable")
-save_sci(covariance_plot, "task1_whitening_covariance", "double", height_mm = 75)
+save_sci(covariance_plot, "task1_whitening_covariance", "double", height_mm = 100)
 
 # Part B: bootstrap methods and preservation of local dependence
 # ----------------------------------------------------------------
