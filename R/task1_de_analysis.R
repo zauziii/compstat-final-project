@@ -402,7 +402,7 @@ sensitivity_plot <- ggplot(sensitivity_data, aes(dimension, g, colour = block_le
   scale_x_continuous(breaks = seq(0, 9, 2)) +
   labs(x = "Candidate dimension k", y = "g(k)", colour = "Block length L",
        shape = "Block length L", caption = "Faint lines: individual seed runs; bold lines: means")
-save_sci(sensitivity_plot, "task1_e_block_sensitivity", "double", height_mm = 75)
+save_sci(sensitivity_plot, "task1_e_block_sensitivity", "double", height_mm = 110)
 
 primary_id <- which(application_jobs$method == "fixed" &
   application_jobs$block_length == primary_block_length & application_jobs$seed_run == 1L)
