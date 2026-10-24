@@ -470,7 +470,7 @@ display_table(recovery_table, digits = 0)
 
 ```{r}
 #| label: fig-de-recovery
-#| out-width: "75%"
+#| out-width: "90%"
 #| fig-cap: "Estimated probability of selecting $q=5$ from 100 simulated datasets per sample size. Panels correspond to block lengths; blue circles and green triangles denote fixed-block and stationary bootstrap results. Error bars are $95\\%$ Wilson intervals."
 knitr::include_graphics(file.path(root, "results/figures/task1_d_recovery_probability.png"))
 ```
