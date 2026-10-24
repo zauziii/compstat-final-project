@@ -38,9 +38,9 @@ project_root <- find_project_root()
 source(file.path(project_root, "R","project_setup.R"))
 source(file.path(project_root, "R", "task1_functions.R"))
 
-data_dir <- file.path(project_root, "output", "data")
-table_dir <- file.path(project_root, "output", "tables")
-figure_dir <- file.path(project_root, "output", "figures")
+data_dir <- file.path(project_root, "results", "data")
+table_dir <- file.path(project_root, "results", "tables")
+figure_dir <- file.path(project_root, "results", "figures")
 
 dir.create(data_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)

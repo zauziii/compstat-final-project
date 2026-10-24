@@ -67,12 +67,7 @@ table_dir  <- "results/tables"  # tables and csv
 figure_dir <- "results/figures" # figures as PNG
 result_dir <- "results"         # RData workspace
 report_dir <- "report"          # rendered report, quarto output
-# The split A--C / D--E analysis keeps generated files under output/.
-if (file.exists(file.path(root, "R", "task1_abc_analysis.R"))) {
-  result_dir <- "output"
-  table_dir <- "output/tables"
-  figure_dir <- "output/figures"
-}
+
 for (folder in c(data_dir, table_dir, figure_dir, result_dir, report_dir))
   dir.create(folder, recursive = TRUE, showWarnings = FALSE)
 
