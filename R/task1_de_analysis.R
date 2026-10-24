@@ -27,9 +27,9 @@ sos_decompose <- function(C_list, rjd_eps = 1e-6,
 if (!requireNamespace("JADE", quietly = TRUE)) {
   stop("Install the JADE package before running this analysis.")
 }
-data_dir <- file.path(project_root, "output", "data")
-table_dir <- file.path(project_root, "output", "tables")
-figure_dir <- file.path(project_root, "output", "figures")
+data_dir <- file.path(project_root, "results", "data")
+table_dir <- file.path(project_root, "results", "tables")
+figure_dir <- file.path(project_root, "results", "figures")
 for (directory in c(data_dir, table_dir, figure_dir)) {
   dir.create(directory, recursive = TRUE, showWarnings = FALSE)
 }
@@ -62,6 +62,15 @@ write_task1_csv <- function(object, directory, filename) {
   stopifnot(startsWith(filename, "task1_"))
   write.csv(object, file.path(directory, filename), row.names = FALSE)
 }
+
+# Fixed design parameters from simulate_setting1(), exported for the report.
+simulation_processes <- data.frame(
+  Component = 1:5,
+  `AR coefficients` = c("$(0.6)$", "$(0.4,0.1,0.3)$", "$(0.4)$", "--", "$(0.1,0.1,0.3)$"),
+  `MA coefficients` = c("$(0,-0.4)$", "$(0.2,0.4)$", "--", "$(0.5,0.3,0.1,0.2)$", "--"),
+  check.names = FALSE
+)
+write_task1_csv(simulation_processes, table_dir, "task1_setting1_processes.csv")
 
 wilson_interval <- function(successes, trials, level = 0.95) {
   if (trials == 0L) return(c(lower = NA_real_, upper = NA_real_))
