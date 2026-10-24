@@ -17,12 +17,12 @@ format:
     documentclass: article
     papersize: a4
     fontsize: 11pt
-    linestretch: 1.05
+    linestretch: 1.10
     geometry:
-      - top=14mm
-      - bottom=14mm
-      - left=12mm
-      - right=12mm
+      - top=15mm
+      - bottom=15mm
+      - left=13mm
+      - right=13mm
     mainfont: "Latin Modern Roman"
     sansfont: "Latin Modern Sans"
     monofont: "Latin Modern Mono"
@@ -1128,6 +1128,4 @@ The derived Gibbs sampler gives interpretable results under separation. With ove
 
 For Faithful, the common-variance predictive check detects a spread discrepancy. Allowing different variances changes the two component spreads and gives a more flexible fitted density. That is useful descriptive evidence, but the current script does not separately check the extension's convergence or its predictive replications. Neither fit establishes physically distinct populations or verified eruption mechanisms.
 
-**Limits of the evidence.** One sample per setting cannot establish repeated-sampling bias or coverage; two starts cannot guarantee exploration of every mode. Sorting does not cure weak identification, and occupancy conditioning changes the target. The 3-minute duration split is a chosen model-checking statistic. The extension changes the variance-prior structure, and the density overlay alone does not establish overall model adequacy.
-
-**Reproducibility.** `R/task2.R` regenerates the chains, CSVs, PNGs and `results/task2_sim.RData`. The report reads saved results without sampling. The common-variance chain objects record starts, seeds and priors. Their raw and ordered diagnostics, the common-variance predictive replications, the unequal-variance draws and session information are included. Display thinning affects plots only; primary summaries use all retained draws.
+**Limitation.** One sample per setting cannot establish repeated-sampling bias or coverage; two starts cannot guarantee exploration of every mode. Sorting does not cure weak identification, and occupancy conditioning changes the target. The 3-minute duration split is a chosen model-checking statistic. The extension changes the variance-prior structure, and the density overlay alone does not establish overall model adequacy.

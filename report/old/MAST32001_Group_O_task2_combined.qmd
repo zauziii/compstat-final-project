@@ -582,7 +582,7 @@ display_table(data.frame(Statistic = t$Statistic, Observed = round(t$Observed, 3
   `Tail count` = paste0(ppc_counts, "/", n_rep), check.names = FALSE))
 ```
 
-The original discussion quotes SDs of 0.295 and 0.412 minutes. The current saved output gives posterior SD medians of `r fmt(median(sqrt(rl_f_unequal$s2_lo)), 3)` and `r fmt(median(sqrt(rl_f_unequal$s2_hi)), 3)` minutes. The following tables and density overlay use the current saved output. Allowing different variances does not itself remove likelihood degeneracy; the proper inverse-gamma priors penalise variances approaching zero.
+The current saved output gives posterior SD medians of `r fmt(median(sqrt(rl_f_unequal$s2_lo)), 3)` and `r fmt(median(sqrt(rl_f_unequal$s2_hi)), 3)` minutes. The following tables and density overlay use the current saved output. Allowing different variances does not itself remove likelihood degeneracy; the proper inverse-gamma priors penalise variances approaching zero.
 
 The unequal-variance model keeps the same mean and weight priors and uses independent $\mathrm{InvGamma}(2,1)$ variance priors. Allocations and mean updates use each component's variance. When ordering the means, each variance moves with its component. Its variance update is
 
