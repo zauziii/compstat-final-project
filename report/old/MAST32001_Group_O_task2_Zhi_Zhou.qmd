@@ -1,0 +1,570 @@
+---
+title: "MAST32001 Computational Statistics — Course Assignment"
+author:
+  - name: Kaiwei Fu
+  - name: Lingyu Wang
+  - name: Sami Pönkä
+  - name: Zhi Zhou
+date: today
+date-format: "D MMMM YYYY"
+lang: en
+engine: knitr
+
+format:
+  pdf:
+    pdf-engine: xelatex
+    documentclass: article
+    papersize: a4
+    fontsize: 11pt
+    linestretch: 1.05
+    geometry:
+      - top=14mm
+      - bottom=14mm
+      - left=12mm
+      - right=12mm
+    mainfont: "Latin Modern Roman"
+    sansfont: "Latin Modern Sans"
+    monofont: "Latin Modern Mono"
+    toc: false
+    number-sections: false
+    colorlinks: true
+    linkcolor: black
+    urlcolor: black
+    citecolor: black
+    fig-dpi: 600
+    fig-cap-location: bottom
+    tbl-cap-location: top
+    keep-tex: false
+    include-in-header:
+      text: |
+        \usepackage{booktabs}
+        \usepackage{caption}
+        \usepackage{float}
+        \usepackage{microtype}
+        \usepackage{fancyhdr}
+        \captionsetup{font=small,labelfont=bf,labelsep=period,
+          justification=raggedright,singlelinecheck=false}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{0.45em}
+        \setlength{\emergencystretch}{2em}
+        \renewcommand{\arraystretch}{0.9}
+        \setlength{\tabcolsep}{5pt}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \fancyfoot[C]{\small\thepage}
+        \renewcommand{\headrulewidth}{0pt}
+        \renewcommand{\footrulewidth}{0pt}
+        \fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}
+          \renewcommand{\headrulewidth}{0pt}}
+
+execute:
+  echo: false
+  message: false
+  warning: false
+  error: false
+  cache: false
+
+fig-align: center
+tbl-cap-location: top
+crossref:
+  fig-title: "Figure"
+  fig-prefix: "Figure"
+  tbl-title: "Table"
+  tbl-prefix: "Table"
+bibliography: refs2.bib
+reference-section-title: References
+csl: ieee.csl
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(knitr)
+
+# Root of the project (parent of the report/ directory).
+root <- normalizePath("..")
+
+# Load every number and table produced by R/task2.R, so that
+# this report is guaranteed to match the analysis script output.
+if (!file.exists(file.path(root, "results/task2_sim.RData")))
+  stop("Run R/task2.R first: it creates results/task2_sim.RData.")
+load(file.path(root, "results/task2_sim.RData"))
+```
+
+# Task 2: Bayesian mixture modelling with MCMC
+
+## Part A: Latent-variable representation and the Gibbs sampler
+
+### Model specification and priors
+
+Each observation comes from one of two normal components, but its source is unknown. The observations are independent, so we do not need the block-resampling machinery designed for dependent time series [@politis1994stationary]. For independent observations $y_1, \dots, y_n$, introduce latent allocations $Z_i \in \{1,2\}$, where $\Pr(Z_i=1)=\pi$ and $\Pr(Z_i=2)=1-\pi$. Conditional on its allocation, $$
+Y_i \mid Z_i 
+=
+k,\mu_1,\mu_2,\sigma^2 
+\sim \mathcal{N}(\mu_k, \sigma^2),
+\qquad
+k=1,2.
+$$
+
+Integrating out $Z_i$ gives the familiar mixture density: $$
+p(y_i \mid \mu_1,\mu_2,\pi,\sigma^2)
+=
+\pi\varphi(y_i;\mu_1,\sigma^2)+(1-\pi)\varphi(y_i;\mu_2,\sigma^2),
+$$
+
+This is a two-component normal mixture with a shared variance.
+
+We use the independent, proper priors $$
+\mu_1,\mu_2 \stackrel{\text{iid}}{\sim}
+\mathcal{N}(m_0,s_0^2),\qquad
+\pi \sim \text{Beta}(a, b),\qquad
+\sigma^2 \sim \text{InvGamma}(\alpha_0,\beta_0),
+$$
+
+with $m_0=0, s_0=10, a=b=1, \text{and}\ \alpha_0=2, \beta=1$. The mean prior is broad on the scales. The Weight prior is uniform, and the two mean priors are identical, so the model treats the two labels symmetrically. The variance prior has mean 1 and infinite variance. These choices keep every update conjugate. They do not make do not make the priors irrelevant: a component with few observations is still sensitive to them.
+
+Our inverse-gamma convention is $$
+p(v) \propto v^{-\alpha_0 -1}\exp(-\beta_0/v),
+\qquad v>0,
+$$
+
+so $1/v$ is gamma with shape $\alpha_0$ and rate $\beta_0$. This convention fixed the rate used in the `R` sampler.
+
+To derive the updates, let $n_k = \sum_i I(Z_i=k)$ and $S_k=\sum_{i:Z_i=k}y_i$. Given the allocations, each observation contributes to only one normal component. The likelihood is $$L(\theta,z;y) \propto
+\pi^{n_1}(1-\pi)^{n_2}(\sigma^2)^{-n/2}
+exp\left[
+-\frac{1}{2\sigma^2}\sum\limits_{i}(y_i-\mu_{z_i})^2
+\right].
+$$
+
+Multiplying by the independent priors gives $p(\theta,z\mid y) \propto L(\theta,z;y)p(\mu_1)p(\mu_2)p(\pi)p(\sigma^2)$. This is the basis of the four conditional updates. Each update keeps only the terms involving its own unknown.
+
+### Full conditional distribution
+
+The complete-data form lets us update one block at a time. Each distribution below conditions on the current values of the other unknown.
+
+**Allocations.** Given the current parameters, Bayes' rule gives the probability that observation $i$ belongs to component 1: $$
+\Pr(Z_i=1 \mid y_i,\theta)
+=
+\frac{
+\pi\varphi(y_i;\mu_1,\sigma^2)
+}{
+\pi\varphi(y_i;\mu_1,\sigma^2) + 
+(1-\pi)\varphi(y_i;\mu_2,\sigma^2)
+}=
+p_i
+$$
+
+We sample $I(Z_i=1) \sim \text{Bernoulli}(p_i)$ independently across observations. To avoid numerical underflow, it first calculates $$
+\ell_{i1}=
+\log\pi+\log\varphi(y_i;\mu_1,\sigma^2),\quad
+\ell_{i2}=
+\log(1-\pi)+\log\varphi(y_i;\mu_2,\sigma^2),
+$$
+
+then uses $p_i=\text{logit}^{-1}(\ell_{i1} - \ell_{i2})$.
+
+**Component means.** Once observations have been allocated, each component has a normal likelihood. For $k=1,2$, combing it with the mean prior gives $$
+p(\mu_k \mid -)
+\propto
+exp\left[
+-\frac{(\mu_k-m_0)^2}{2s_0^2}
+-\frac{1}{2\sigma^2}
+\sum \limits_{i:Z_i=k}(y_i-\mu_k)^2
+\right].
+$$
+
+Completing the square gives $$
+V_k=\left(s_0^{-2}+\frac{n_k}{\sigma^2}\right)^{-1},\quad
+M_k=V_k\left(\frac{m_0}{s_0^2}+\frac{S_k}{\sigma^2}\right),\quad
+\mu_k \mid - \sim \mathcal{N}(M_k,V_k).
+$$
+
+If $n_k=0$, then $S_k=0$ and the update reduces to the prior. We will use this fact later, because it explains the large mean excursions in the overlap run.
+
+**Mixing proportion.** The sampled counts contribute $\pi^{n_1}(1-\pi)^{n_2}$ to the likelihood. Combining this with the beta prior gives
+
+$$
+\pi \mid -
+\sim
+\text{Beta}(a+n_1,b+n_2).
+$$
+
+**Variance.** Finally, pool the residuals from both components as $\text{SSE}=\sum_i(y_i-\mu_{Z_i})^2$. Combining likelihood and prior gives $$
+p(\sigma^2 \mid -)
+\propto
+(\sigma^2)^{-(\alpha_0+n/2)-1}
+exp\left[
+-\frac{\beta_0+\text{SSE}/2}{\sigma^2}
+\right],
+$$ and hence $$
+\sigma^2 \mid -
+\sim
+\text{InvGamma}(\alpha_0+\frac{n}{2}, \beta_0+\frac{\text{SSE}}{2}).
+$$ The mean prior do not involve $\sigma^2$, so they add no extra term to this conditional shape.
+
+### Turning the conditionals into `R` code
+
+With the four conditionals in hand, the sampler writes itself. It cycles through the updates, always conditioning on the most recent values. The R below is `rgibbs_mix()` from `R/task2.R`. At every iteration, we keep $(\mu_1,\mu_2,\pi,\sigma^2))$ and of $n_1$, the number of observations allocated to component 1. That is enough for the posterior inference and for the diagnostics discussed in Parts B and C. The allocation step works on the log scale to avoid underflow, and the sampler checks its input and every sampled state.
+
+Starting values matter here, because the posterior has two symmetric modes. If two chains never agree, we cannot trust the answer. So for each setting we start two chains: one with the labels swapped, the other with the means spread widely. Then we check that both converge to the same target. The exact starting schemes are listed in the simulation design (Part B).
+
+How long to run is a practical question, and the answer differs by setting. The separated and the faithful setting run for 20,000 iterations with 5,000 burn-in. The overlapping setting runs for 60,000 iterations with 15,000 burn-in, because its posterior is harder to explore and mixes more slowly. Part B checks whether these choices are enough, using trace plots, the effective sample size (ESS), and the Gelman-Rubin $\hat R$ statistic.
+
+```{r}
+#| label: gibbs-code
+#| echo: true
+#| eval: false
+# Full-conditional Gibbs sampler for the 2-component Gaussian mixture.
+rgibbs_mix <- function(y, n_iter = 5000, burn = 1000, m0 = 0, s0 = 10, a = 1, b = 1,
+                       alpha0 = 2, beta0 = 1, init = NULL, seed = NULL) {
+  if (!is.null(seed)) set.seed(seed)
+  y <- as.numeric(y); n <- length(y)
+  scalar <- function(x) is.numeric(x) && length(x) == 1 && is.finite(x)
+  if (n < 3 || any(!is.finite(y)) || sd(y) <= 0) stop("Invalid data")
+  if (!scalar(n_iter) || !scalar(burn) || n_iter != floor(n_iter) || burn != floor(burn) || burn < 0 || n_iter <= burn) stop("Require integer n_iter > burn >= 0")
+  if (!all(vapply(list(m0, s0, a, b, alpha0, beta0), scalar, logical(1))) || any(c(s0, a, b, alpha0, beta0) <= 0)) stop("Invalid prior parameters")
+  started <- proc.time()[["elapsed"]]
+  mu1 <- mu2 <- pi <- s2 <- numeric(n_iter); z1 <- integer(n_iter)  # n1 at each iteration
+  if (is.null(init)) {                       # k-means start (10 restarts)
+    km <- kmeans(y, centers = 2, nstart = 10)
+    mu1_c <- km$centers[1]; mu2_c <- km$centers[2]; pi_c <- km$size[1] / n
+    s2_c <- mean((y - km$centers[km$cluster])^2); if (s2_c <= 0) s2_c <- var(y) / 2
+  } else { mu1_c <- init$mu1; mu2_c <- init$mu2; pi_c <- init$pi; s2_c <- init$s2 }
+  initial <- c(mu1_c, mu2_c, pi_c, s2_c)
+  if (length(initial) != 4 || any(!is.finite(initial)) || pi_c <= 0 || pi_c >= 1 || s2_c <= 0) stop("Invalid initial values")
+  init_used <- setNames(as.numeric(initial), c("mu1", "mu2", "pi", "s2"))
+  for (it in seq_len(n_iter)) {
+    # 1. Allocations
+    log1 <- log(pi_c) + dnorm(y, mu1_c, sqrt(s2_c), log = TRUE)
+    log2 <- log1p(-pi_c) + dnorm(y, mu2_c, sqrt(s2_c), log = TRUE)
+    zi <- rbinom(n, 1, plogis(log1 - log2)); n1 <- sum(zi == 1); n2 <- n - n1
+    # 2. Component means
+    ybar1 <- if (n1 > 0) mean(y[zi == 1]) else 0
+    ybar2 <- if (n2 > 0) mean(y[zi == 0]) else 0
+    prec1 <- 1 / s0^2 + n1 / s2_c; prec2 <- 1 / s0^2 + n2 / s2_c
+    mu1_c <- rnorm(1, (m0 / s0^2 + n1 * ybar1 / s2_c) / prec1, sqrt(1 / prec1))
+    mu2_c <- rnorm(1, (m0 / s0^2 + n2 * ybar2 / s2_c) / prec2, sqrt(1 / prec2))
+    # 3. Mixing proportion
+    pi_c <- rbeta(1, a + n1, b + n2)
+    # 4. Variance: mean priors are independent N(m0,s0^2). IG density is proportional to v^(-alpha-1)*exp(-beta/v). There is no extra K/2 in the conditional shape.
+    resid <- sum(ifelse(zi == 1, (y - mu1_c)^2, (y - mu2_c)^2))
+    s2_c <- 1 / rgamma(1, shape = alpha0 + n / 2, rate = beta0 + resid / 2)
+    if (any(!is.finite(c(mu1_c, mu2_c, pi_c, s2_c))) || s2_c <= 0 || pi_c <= 0 || pi_c >= 1) stop("Invalid sampled state at iteration ", it)
+    mu1[it] <- mu1_c; mu2[it] <- mu2_c; pi[it] <- pi_c; s2[it] <- s2_c; z1[it] <- n1
+  }
+  out <- data.frame(mu1 = mu1, mu2 = mu2, pi = pi, s2 = s2, n1 = z1)
+  list(samples = out[seq.int(burn + 1, n_iter), , drop = FALSE], all = out,
+       init_used = init_used, n = n, n_iter = n_iter, burn = burn, seed = seed,
+       elapsed_seconds = proc.time()[["elapsed"]] - started,
+       prior = list(m0 = m0, s0 = s0, a = a, b = b, alpha0 = alpha0, beta0 = beta0))
+}
+```
+
+## Part B: Simulation study and computational behaviour
+
+### Simulation design
+
+The first test for a new sampler is a self-check. We generate data from known parameters, run the sampler, and see whether the posterior finds its way back to the truth. We do this with $n = 500$ observations and two settings that differ in one important way: how far apart the components are.
+
+1. Clearly separated components: $\mu_1 = -2$, $\mu_2 = 2$. The densities barely overlap, the two modes are easy to tell apart, and the model is close to identifiable.
+
+2. Substantially overlapping components: $\mu_1 = -0.5$, $\mu_2 = 0.5$. The component densities overlap heavily, and a large fraction of the mass is ambiguous between the two components.
+
+The two settings are not equally hard. When the components are far apart, the likelihood has two well-separated modes and the posterior concentrates near the true parameters. When they overlap, the likelihood is flat between the modes. The posterior becomes multimodal and symmetric under the label permutation $(\mu_1,\mu_2,\pi) \mapsto (\mu_2,\mu_1,1-\pi)$. The chain can jump between the two mirror-image modes, and that jump is what we call label switching. This symmetry is the main obstacle we have to handle when we summarize the output.
+
+For each setting we run two chains from different starting values: one with swapped labels and one with widely spread means. @tbl-inits lists the exact values and seeds (stored in `results/tables/task2_initial_values_and_seeds.csv`). The two starts differ in mean positions, label orientation, mixing proportion, and variance. If two chains that start this far apart still agree, the agreement is not an accident.
+
+
+```{r}
+#| label: tbl-inits
+#| tbl-cap: "Initial values and seeds for the two chains in each setting."
+init_tab <- initial_values[, c("Setting", "Chain", "Seed", "mu1", "mu2", "pi", "s2")]
+kable(init_tab, digits = 3, row.names = FALSE)
+```
+
+```{r}
+#| label: sim-code
+#| echo: true
+#| eval: false
+# Two settings: clearly separated vs substantially overlapping components
+n <- 500; set.seed(20261016); z_true <- rbinom(n, 1, 0.5)
+y_sep <- ifelse(z_true == 1, rnorm(n, -2, 1), rnorm(n, 2, 1))      # mu = +/- 2
+y_ov  <- ifelse(z_true == 1, rnorm(n, -0.5, 1), rnorm(n, 0.5, 1))  # mu = +/- 0.5
+
+# Two chains from deliberately different starting values
+inits <- list(
+  swap   = list(mu1 = 2, mu2 = -2, pi = 0.9, s2 = 1),  # swapped labels
+  spread = list(mu1 = -4, mu2 = 4, pi = 0.5, s2 = 4)    # spread means
+)
+run_chains <- function(y, inits, n_iter = 5000, burn = 1000, seed_base = 100) {
+  ans <- lapply(seq_along(inits), function(i) {
+    message("Chain ", i, ": ", names(inits)[i])
+    rgibbs_mix(y, n_iter = n_iter, burn = burn, init = inits[[i]], seed = seed_base + i)
+  })
+  setNames(ans, names(inits))
+}
+message("Separated simulation")
+chains_sep <- run_chains(y_sep, inits, n_iter = 20000, burn = 5000, seed_base = 100)
+message("Overlapping simulation")
+chains_ov  <- run_chains(y_ov, inits, n_iter = 60000, burn = 15000, seed_base = 200)
+```
+
+### Recovery of the data-generating mixture
+
+Once we have the chains, the first question is whether the sampler finds the mixture that generated the data. The posterior does not care about the order of the labels. So before we compare anything, we impose the order restriction $\mu_{(1)} < \mu_{(2)}$, relabel every draw accordingly, and pool the two chains. @tbl-recovery and @tbl-recovery-ov then compare the posterior median and the 95% credible interval of each parameter with its true value.
+
+```{r}
+#| label: relabel-code
+#| echo: true
+#| eval: false
+# Relabel by ordering the means: mu(1) < mu(2); flip pi accordingly
+relabel_chain <- function(ch) {
+  s <- ch$samples; flip <- s$mu1 > s$mu2
+  data.frame(mu_lo = pmin(s$mu1, s$mu2), mu_hi = pmax(s$mu1, s$mu2),
+             pi_lo = ifelse(flip, 1 - s$pi, s$pi), s2 = s$s2,
+             n_lo = ifelse(flip, ch$n - s$n1, s$n1))
+}
+pool_relabeled <- function(chains) do.call(rbind, lapply(chains, function(ch)
+  relabel_chain(ch)[, c("mu_lo", "mu_hi", "pi_lo", "s2")]))
+```
+
+
+```{r}
+#| label: tbl-recovery
+#| tbl-cap: "Separated components: posterior summaries vs truth (order-restricted, two chains pooled)."
+rec_cols <- c("Parameter", "Truth", "Median", "lo", "hi")
+kable(tab_sep[, rec_cols], digits = 2, row.names = FALSE)
+```
+
+In the separated setting the answer is clean. The sampler recovers the generating mixture almost exactly. The posterior medians of $\mu_1$ and $\mu_2$ are `r round(tab_sep$Median[tab_sep$Parameter == "mu1 (lower)"], 2)` and `r round(tab_sep$Median[tab_sep$Parameter == "mu2 (upper)"], 2)`, close to the true values $-2$ and $2$. The 95% credible intervals are narrow and contain the truth. The same holds for $\pi$ (median `r round(tab_sep$Median[tab_sep$Parameter == "pi"], 2)`) and $\sigma^2$ (median `r round(tab_sep$Median[tab_sep$Parameter == "sigma2"], 2)`).
+
+```{r}
+#| label: tbl-recovery-ov
+#| tbl-cap: "Overlapping components: posterior summaries vs truth (order-restricted, two chains pooled)."
+kable(tab_ov[, rec_cols], digits = 2, row.names = FALSE)
+```
+
+Overlap makes the answer noisier, but not wrong. After relabeling, the posterior still centers near the truth. The median of $\mu_1$ is `r round(tab_ov$Median[tab_ov$Parameter == "mu1 (lower)"], 2)` (true $-0.5$), the median of $\mu_2$ is `r round(tab_ov$Median[tab_ov$Parameter == "mu2 (upper)"], 2)` (true $0.5$), and the median of $\pi$ is `r round(tab_ov$Median[tab_ov$Parameter == "pi"], 2)`. The credible intervals are much wider, because the likelihood is flat between the modes. So once the label ambiguity is removed, the sampler recovers the data-generating mixture in both settings. The price of overlap is precision.
+
+Before pooling, we also ask whether the answer depends on where we started. @tbl-chains compares the two chains separately. The per-chain ordered medians agree closely in every setting. The separated and faithful chains in particular agree to the second decimal, while they remain in opposite raw label orientations (Section 3.2). So the agreement is not an artefact of identical labeling.
+
+```{r}
+#| label: tbl-chains
+#| tbl-cap: "Per-chain posterior medians after relabeling (order restriction $\\mu_{(1)} < \\mu_{(2)}$) and label-switch counts."
+chain_tab <- label_tab[, c("Setting", "Chain", "Ordered_mu_lo", "Ordered_mu_hi",
+                           "Ordered_pi_lo", "Switches")]
+names(chain_tab) <- c("Setting", "Chain", "mu_lo median", "mu_hi median",
+                      "pi_lo median", "Switches")
+kable(chain_tab, digits = 3, row.names = FALSE)
+```
+
+```{r}
+#| label: fig-trace
+#| out-width: "75%"
+#| fig-cap: "Trace plots of the raw draws (two chains, one colour per chain) for the separated and the overlapping settings. The separated chains oscillate around stable levels and never swap labels; the overlapping chains wander between the two equivalent modes, and every jump between modes is a label switch."
+knitr::include_graphics(file.path(root, "results/figures/task2_simulation_raw_traces.png"))
+```
+
+The trace plots make the mechanism visible. In the separated setting the chains behave as a well-mixing sampler should. The draws oscillate around stable levels, and the labels never swap. In the overlapping setting the raw traces wander between the two equivalent modes. Every large jump in the overlap panels of @fig-trace is a label switch that swaps the roles of $\mu_1$ and $\mu_2$. @fig-density shows the practical consequence: the fitted
+posterior predictive density reproduces the generating mixture in both settings. All figures in this report use the Okabe--Ito colour palette [@okabe2008color], drawn with ggplot2 [@wickham2016ggplot2] and the ggpubr publication theme [@kassambara2020ggpubr].
+
+### MCMC diagnostics and computation behavior
+
+Good medians are not enough on their own. We also want to know that the chains really converged. We measure mixing and convergence on the order-restricted chains with the effective sample size (ESS) and the maximum Gelman-Rubin $\hat R$ statistic, the standard diagnostic toolkit [@gelman2013bayesian]. Table 5 summarizes the computational behavior of each setting, and Table 6 gives the per-parameter diagnostics. We screen the chains with all $\hat R \leq 1.01$ and all bulk and tail ESS $\geq 400$. Every setting passes.
+
+```{r}
+#| label: tbl-diagnostics
+#| tbl-cap: "Computational behaviour per setting: chain length, maximum Gelman--Rubin statistic, minimum bulk and tail ESS, total sampler time, and the fraction of ambiguous latent allocations (posterior probability in 0.2--0.8)."
+# Rebuild the per-setting performance table from the current-version objects
+# (screen_tab, initial_values, alloc_*) stored in results/task2_sim.RData.
+perf_iv <- aggregate(cbind(Iterations, Burn) ~ Setting, initial_values, max)
+perf_tm <- aggregate(Sampler_seconds ~ Setting, initial_values, sum)
+perf <- merge(merge(screen_tab, perf_iv, by = "Setting"), perf_tm, by = "Setting")
+perf$ambiguous_fraction <- unname(c(Separated = amb_sep, Overlap = amb_ov, Faithful = amb_faith)[perf$Setting])
+perf$mean_entropy <- unname(c(Separated = mean(alloc_sep$entropy), Overlap = mean(alloc_ov$entropy), Faithful = mean(alloc_f$entropy))[perf$Setting])
+perf$retained <- perf$Iterations - perf$Burn
+perf <- perf[, c("Setting", "Iterations", "Burn", "retained", "Rhat_max", "ESS_min", "ESS_tail_min",
+                 "Sampler_seconds", "ambiguous_fraction", "mean_entropy", "Screen_passed")]
+names(perf) <- c("setting", "n_iter", "burn", "retained", "max_ordered_rhat", "min_bulk_ess",
+                 "min_tail_ess", "sampler_seconds", "ambiguous_fraction", "mean_entropy", "diagnostic_screen_passed")
+performance <- perf
+perf_g <- function(m) unname(perf[[m]][match(c("Separated", "Overlap", "Faithful"), perf$setting)])
+perf_tab <- data.frame(
+  Metric = c("Iterations", "Burn-in", "Retained draws", "Maximum ordered R-hat", "Minimum bulk ESS",
+             "Minimum tail ESS", "Sampler time (seconds)", "Ambiguous allocations (%)"),
+  Separated = c(perf_g("n_iter")[1], perf_g("burn")[1], perf_g("retained")[1], round(perf_g("max_ordered_rhat")[1], 4),
+                round(perf_g("min_bulk_ess")[1], 0), round(perf_g("min_tail_ess")[1], 0),
+                round(perf_g("sampler_seconds")[1], 2), round(100 * perf_g("ambiguous_fraction")[1], 1)),
+  Overlap = c(perf_g("n_iter")[2], perf_g("burn")[2], perf_g("retained")[2], round(perf_g("max_ordered_rhat")[2], 4),
+              round(perf_g("min_bulk_ess")[2], 0), round(perf_g("min_tail_ess")[2], 0),
+              round(perf_g("sampler_seconds")[2], 2), round(100 * perf_g("ambiguous_fraction")[2], 1)),
+  Faithful = c(perf_g("n_iter")[3], perf_g("burn")[3], perf_g("retained")[3], round(perf_g("max_ordered_rhat")[3], 4),
+               round(perf_g("min_bulk_ess")[3], 0), round(perf_g("min_tail_ess")[3], 0),
+               round(perf_g("sampler_seconds")[3], 2), round(100 * perf_g("ambiguous_fraction")[3], 1))
+)
+kable(perf_tab, row.names = FALSE)
+```
+
+The separated setting behaves as advertised. The minimum bulk ESS is `r round(performance$min_bulk_ess[performance$setting == "Separated"], 0)` and $\hat{R}$ reaches at most `r round(performance$max_ordered_rhat[performance$setting == "Separated"], 3)`. The overlapping setting is the more interesting one. Its raw (unrelabeled) chains are dominated by label switching. The raw ESS collapses and $\hat{R}$ rises far above 1. Full raw diagnostics are stored in `results/tables/task2_raw_label_diagnostics.csv`. After the order restriction the chains still mix slowly. The minimum bulk ESS is `r round(performance$min_bulk_ess[performance$setting == "Overlap"], 0)` and $\hat{R}$ is `r round(performance$max_ordered_rhat[performance$setting == "Overlap"], 2)`. But they have been run long enough for the diagnostic screen to pass.
+
+```{r}
+#| label: tbl-diag
+#| tbl-cap: "Per-parameter diagnostics of the order-restricted pooled chains: posterior median, Gelman--Rubin statistic, bulk and tail ESS, and MCSE of the posterior mean."
+diag_show <- diag_detailed[, c("Setting", "Parameter", "Median", "Rhat", "ESS",
+                               "ESS_tail", "MCSE")]
+kable(diag_show, digits = 4, row.names = FALSE)
+```
+
+**Raw versus ordered diagnostics.** The comparison is informative. The maximum raw $\hat{R}$ across all parameters is `r round(max(diag_raw_detailed$Rhat[diag_raw_detailed$Setting == "Separated"]), 3)` for separated, `r round(max(diag_raw_detailed$Rhat[diag_raw_detailed$Setting == "Overlap"]), 3)` for overlap, and `r round(max(diag_raw_detailed$Rhat[diag_raw_detailed$Setting == "Faithful"]), 3)` for faithful. The maximum ordered $\hat{R}$ is at most `r round(max(diag_detailed$Rhat), 4)` in every setting. So poor raw diagnostics mean that the chains sit in different symmetric label modes. They do not mean that the ordered components mix poorly, and they do not signal a defect of the sampler. Raw and ordered diagnostics answer different questions. Only the ordered ones are meaningful for component-specific summaries.
+
+### Effect of overlap: label switching and latent allocations
+
+**Label switching.** To see how often a chain changes its mind about which component is which, we counted, for each chain, how many times the ordering of the means (the sign of $\mu_1 - \mu_2$) changed between consecutive draws. The column `Switches` in `results/tables/task2_label_switching.csv` reports the counts. In the separated setting the labels never switched (`r sum(label_tab$Switches[label_tab$Setting == "Separated"])` switches across both chains). In the overlapping setting the combined count was `r sum(label_tab$Switches[label_tab$Setting == "Overlap"])` over the same post-burn period. The consequence is immediate. Under overlap, naive posterior means of the raw draws are meaningless. Both component means are averaged toward zero. So we need the order restriction $\mu_{(1)} < \mu_{(2)}$ before summarizing the component-specific parameters, as done in @tbl-recovery and @tbl-recovery-ov.
+
+**Label-invariant posterior quantities.** Which summaries actually suffer from label switching? Not every summary needs a fixed labelling. Quantities that are symmetric under the permutation $(\mu_1,\mu_2,\pi) \leftrightarrow (\mu_2,\mu_1,1-\pi)$ stay meaningful when computed directly from the raw chains. These include the posterior predictive density of a future observation, the marginal posterior of $\sigma^2$, the posterior distribution of the latent allocation probabilities, and any clustering-type summary derived from them, such as the posterior probability that two observations belong to the same component. Label switching does not touch these, so we can report them without any identifiability restriction. Component-specific statements about $\mu_1$, $\mu_2$, and $\pi$ are different. They are only interpretable after an identifiability restriction (here $\mu_{(1)} < \mu_{(2)}$) or an equivalent relabeling of the draws.
+
+**Latent allocations.** Overlap also shows up in how sure the posterior is about the latent allocations. For each observation we computed its posterior probability of belonging to the lower-mean component, averaged over the pooled relabeled draws. Under separation these probabilities concentrate near 0 or 1. Only `r round(100 * amb_sep, 1)`% of the observations are ambiguous, with probability between 0.2 and 0.8. Under overlap, `r round(100 * amb_ov, 1)`% of the observations fall in this ambiguous range. The posterior cannot decide between the components for a substantial fraction of the sample. This is the mechanism behind the wider credible intervals in @tbl-recovery-ov and the label-switching behavior. With strong overlap, the mixture is only weakly identified.
+
+Even when the posterior is indecisive, we can still ask how well a hard rule would do. Using the known generating allocations, the maximum-a-posteriori (MAP) rule $\hat Z_i = 1 \iff p_i \ge 0.5$ recovers `r round(100 * mean((p_sep >= 0.5) == (z_true == 1)), 1)`% of the allocations under separation and `r round(100 * mean((p_ov >= 0.5) == (z_true == 1)), 1)`% under overlap. A probability near one half still allows a hard decision, but that decision carries much less certainty.
+
+```{r}
+#| label: fig-density
+#| out-width: "75%"
+#| fig-cap: "Simulated data with the fitted posterior predictive density (solid) and the true generating density (dashed). The fit reproduces the data in both settings."
+knitr::include_graphics(file.path(root, "results/figures/task2_simulation_density.png"))
+```
+
+### Empty components and weak identification
+
+An empty component means that its sampled allocation count was zero in a retained sweep. An extreme weight is a mixing proportion below 0.01 or above 0.99. @tbl-occ reports how often each happens in each setting. Empty components are a known issue in Bayesian mixture estimation [@fraley2007mixtures]. These draws matter. An empty component draws its mean from the broad normal prior. With no observations to constrain it, the mean is free to wander until the next allocation. That is why an overlapping mixture can produce large mean excursions. This is a property of weakly constrained components under the specified model and prior, not a coding error. And it is exactly the regime in which the overlapping setting operates.
+
+```{r}
+#| label: tbl-occ
+#| tbl-cap: "Fraction of retained sweeps with an empty component or an extreme mixing weight."
+occ <- data.frame(
+  Setting = c("Separated", "Overlap", "Faithful"),
+  empty = sapply(list(chains_sep, chains_ov, chains_f), function(chs)
+    100 * mean(vapply(chs, function(ch) { n1 <- ch$samples$n1; mean(n1 == 0 | n1 == ch$n) }, numeric(1)))),
+  extreme = sapply(list(chains_sep, chains_ov, chains_f), function(chs)
+    100 * mean(vapply(chs, function(ch) { pi <- ch$samples$pi; mean(pi < 0.01 | pi > 0.99) }, numeric(1))))
+)
+names(occ) <- c("Setting", "Empty-component draws (%)", "Extreme weight draws (%)")
+kable(occ, digits = 2, row.names = FALSE)
+```
+
+## Part C: Label switching and identifiability
+
+### The symmetry of the likelihood
+
+Part B showed label switching happening in practice. Here we look at why it happens and what can be done about it. The reason is a symmetry of the model. The mixture density is invariant under permutation of the component labels:
+
+$$p(y_i \mid \mu_1,\mu_2,\sigma^2,\pi) = p(y_i \mid \mu_2,\mu_1,\sigma^2,1-\pi),$$
+
+The same invariance holds for the posterior, because the prior is symmetric in $\mu_1$ and $\mu_2$. The parameter vector $(\mu_1,\mu_2,\pi)$ is then identifiable only up to this permutation. The posterior has two equivalent modes. A chain that can cross the low-probability region between them alternates between the two. Label switching is a feature of the model itself, not an artefact of our implementation.
+
+### Label switching in the simulated chains
+
+To see how switching looks in practice, we return to the simulated chains. The chains in the separated setting never switched labels, with `r sum(label_tab$Switches[label_tab$Setting == "Separated"])` switches over the retained iterations. The overlapping chains switched `r sum(label_tab$Switches[label_tab$Setting == "Overlap"])` times. As the overlap panels of @fig-trace show, a switch appears as an abrupt jump. The chain spends long stretches in one mode and then flips to the mirror mode. Each switch changes the ordering of the means. Because the sampler must cross a region of low posterior mass to switch, switching is rare when the components are well separated and frequent when they overlap.
+
+Under separation the two chains remain in opposite label orientations after burn-in. The fraction of retained draws with $\mu_1 < \mu_2$ is `r round(label_tab$Fraction_mu1_lower[label_tab$Setting == "Separated" & label_tab$Chain == "swap"], 2)` for the swap chain and `r round(label_tab$Fraction_mu1_lower[label_tab$Setting == "Separated" & label_tab$Chain == "spread"], 2)` for the spread chain. One chain therefore assigns the lower-mean component to label 1, the other to label 2, even though neither chain switches labels within its retained trajectory. So the raw labels depend on initialization even when switching is rare. The ordered summaries in @tbl-recovery and @tbl-recovery-ov remove this dependence.
+
+We count a switch as a change in the ordering of the means between consecutive draws. @fig-ordered shows the same chains after the order restriction. The switching disappears, and both chains converge to a common, interpretable parameterization.
+
+```{r}
+#| label: switch-code
+#| echo: true
+#| eval: false
+# Count label switches: changes of the ordering of (mu1, mu2)
+switches <- function(ch) sum(diff(sign(ch$samples$mu1 - ch$samples$mu2)) != 0)
+sw_sep <- sapply(chains_sep, switches); sw_ov <- sapply(chains_ov, switches)
+cat(sprintf("Label switches (per chain): separated %s, overlap %s\n",
+            paste(sw_sep, collapse = ","), paste(sw_ov, collapse = ",")))
+```
+
+```{r}
+#| label: fig-ordered
+#| out-width: "75%"
+#| fig-cap: "Order-restricted traces (two chains, one colour per chain) for the separated and the overlapping settings. After relabeling by $\\mu_{(1)} < \\mu_{(2)}$, the switching disappears and the chains converge to a common, interpretable parameterization; the overlapping chains still mix more slowly than the separated ones."
+knitr::include_graphics(file.path(root, "results/figures/task2_simulation_ordered_traces.png"))
+```
+
+### Why ordinary posterior summaries are misleading
+
+Without relabeling, the marginal posterior of $\mu_1$ averages over both modes. That is exactly why the raw draws cannot be summarized directly. In the overlapping setting the raw posterior means of $\mu_1$ and $\mu_2$ are both pulled toward zero. The true values are $-0.5$ and $0.5$. The corresponding credible intervals become wide and uninterpretable. The same happens to $\pi$, whose posterior is dragged toward $0.5$. Component-specific statements only become meaningful after we separate the two modes.
+
+### Posterior quantities that do not require fixed labels
+
+Which summaries survive? Several are symmetric under the label permutation and stay meaningful when computed directly from the raw chains. These are the posterior predictive density of a future observation, the marginal posterior of $\sigma^2$, the posterior allocation probabilities, and clustering-type summaries such as the posterior probability that two observations belong to the same component. Label switching does not affect them, so we can report them without any identifiability restriction. See Section 2.4 for the allocation analysis.
+
+### Identifiability restrictions and post-processing
+
+Two remedies are available. The first is a constrained prior, for example $\mu_1 < \mu_2$ a priori. It makes the model identifiable by construction, but it changes the target posterior and complicates the sampler. The second, which we use here, is to run the sampler unconstrained and relabel the draws afterwards. We use the order restriction $\mu_{(1)} < \mu_{(2)}$. At each iteration we assign the smaller and the larger of $(\mu_1,\mu_2)$ to the two components and flip $\pi$ accordingly, with $\pi \mapsto 1 - \pi$ when $\mu_1 > \mu_2$. @tbl-recovery and @tbl-recovery-ov report the relabeled posterior summaries.
+
+We should not impose the ordering from the start without discussing why. A constrained sampler explores only one mode. It hides the symmetry of the posterior and makes the label-switching phenomenon invisible. Running the sampler unconstrained and relabeling afterwards keeps the full exploration of the posterior and still gives interpretable, component-specific summaries.
+
+## Part D: Application to the Old Faithful geyser data
+
+So far everything has been simulated. To see whether the sampler works in practice, we fitted the two-component mixture to the eruption durations of the Old Faithful geyser ($n = 272$, from the `datasets` package). The data are strongly bimodal. They correspond to short and long eruption regimes, and we analyse them on the original scale in minutes. We run two chains from setting-adapted starting values. One start swaps the labels and uses the 20% and 80% quantiles of the durations. The other spreads the means beyond the observed range. Each chain runs for 20,000 iterations with 5,000 burn-in. See @tbl-inits, Faithful rows.
+
+```{r}
+#| label: faithful-code
+#| echo: true
+#| eval: false
+# Old Faithful: setting-adapted initial values
+data(faithful, package = "datasets"); y_faith <- faithful$eruptions
+q_f <- as.numeric(quantile(y_faith, c(.2, .8)))
+inits_f <- list(
+  swap = list(mu1 = q_f[2], mu2 = q_f[1], pi = .8, s2 = var(y_faith)),
+  spread = list(mu1 = min(y_faith) - sd(y_faith), mu2 = max(y_faith) + sd(y_faith),
+                pi = .5, s2 = 2 * var(y_faith))
+)
+# Sample the posterior and calculate diagnostics
+message("Old Faithful")
+chains_f <- run_chains(y_faith, inits_f, n_iter = 20000, burn = 5000, seed_base = 300)
+```
+
+Two tables summarize the results on the real data. @tbl-faithful-table reports the posterior summaries under the order restriction $\mu_{\text{short}} < \mu_{\text{long}}$, and @tbl-faithdiag gives the corresponding diagnostics.
+
+```{r}
+#| label: tbl-faithful-table
+#| tbl-cap: "Old Faithful eruptions: posterior summaries (order-restricted, two chains pooled)."
+tab_f$Parameter <- c("$\\mu$ (short)", "$\\mu$ (long)", "$\\pi$ (short)", "$\\sigma^2$")
+kable(tab_f[, c("Parameter", "Median", "lo", "hi")], digits = 2, row.names = FALSE, escape = FALSE)
+```
+
+```{r}
+#| label: tbl-faithdiag
+#| tbl-cap: "Old Faithful: per-parameter diagnostics of the order-restricted pooled chains."
+fdiag <- diag_detailed[diag_detailed$Setting == "Faithful",
+                       c("Parameter", "Median", "Rhat", "ESS", "ESS_tail", "MCSE")]
+kable(fdiag, digits = 4, row.names = FALSE)
+```
+
+The posterior places the two components at `r round(tab_f$Median[1], 2)` and `r round(tab_f$Median[2], 2)` minutes. The proportion of short eruptions is `r round(tab_f$Median[3], 2)`, and the residual standard deviation is `r round(sqrt(tab_f$Median[4]), 2)` minutes. This agrees well with the known two-regime structure of the geyser. On the original scale the components are well separated. The chains never switch labels (`r sum(label_tab$Switches[label_tab$Setting == "Faithful"])` switches), and the minimum bulk ESS is `r round(performance$min_bulk_ess[performance$setting == "faithful"], 0)`. The posterior summaries are reliable. The posterior allocation probabilities agree. Only `r round(100 * amb_faith, 1)`% of the eruptions have an ambiguous allocation (probability between 0.2 and 0.8). The short and long eruption regimes are essentially perfectly separated.
+
+@fig-faithful-1 shows the histogram of the eruption durations with the posterior predictive density of the fitted mixture. The fitted curve reproduces both modes and the dip between them. @fig-faithful-2 shows the posterior allocation probabilities for all three datasets. Under separation and for Old Faithful, they concentrate near 0 and 1. Under overlap, a large fraction of the observations lies inside the ambiguous band. @fig-faithful-3 confirms that the faithful chains are stable and well mixed.
+
+```{r}
+#| label: fig-faithful
+#| out-width: "75%"
+#| fig-cap: ["Old Faithful eruptions: histogram with the posterior predictive density (blue) from the fitted two-component mixture.",
+#|           "Posterior probability of the lower-mean component for every observation, for the two simulated settings and Old Faithful. Probabilities near 0 or 1 indicate decisive allocations; the shaded band (0.2--0.8) marks ambiguous observations.",
+#|           "Order-restricted trace plots of the two Old Faithful chains. The chains are stable, mix well and do not switch labels."]
+knitr::include_graphics(c(
+  file.path(root, "results/figures/task2_faithful_density.png"),
+  file.path(root, "results/figures/task2_allocation_probabilities.png"),
+  file.path(root, "results/figures/task2_faithful_ordered_traces.png")))
+```
+
+@fig-faithful-1 also reveals a local limitation of the fitted description. The observed short-duration peak is sharper and taller than the fitted lower component, which is broader and lower in that region. The common-variance assumption and the normal shape of each component are plausible contributors. But a histogram alone cannot isolate the cause. An unequal-variance extension would be a natural follow-up, not a replacement made without discussion. A formal posterior predictive check would simulate replicated data sets from the posterior and compare chosen summaries with the observations. The histogram-plus-density plot is a useful graphical comparison, but it is not by itself a full posterior predictive assessment.
+
+Finally, the fitted components are a statistical description of short and long eruption durations. They should not be read as evidence that the observations come from two physically separate populations, or from two independently established eruption mechanisms.
+
+## Conclusions
+
+We set out to build a Gibbs sampler for the two-component Gaussian mixture from scratch: the model, the full conditionals, and the implementation. Then we checked whether it behaves the way the theory says it should. The simulations answer that question affirmatively. The sampler recovers the data-generating parameters in both a well-separated and a substantially overlapping setting, as long as we summarize the posterior under the order restriction $\mu_{(1)} < \mu_{(2)}$. They also show where the difficulty lies. Overlap lowers the effective sample sizes, inflates the Gelman--Rubin statistic, and induces label switching. Standard MCMC diagnostics detect all of these, and relabeling fixes them. The diagnostic screen, all $\hat{R} \le 1.01$ and all ESS $\ge 400$, passed for every setting. On the Old Faithful data the sampler reproduces the familiar two-regime structure, with essentially decisive latent allocations.
+
+**Limitations.** The computational conclusions are limited to the two starts we used and the run lengths we recorded. Additional manual starts would strengthen the assessment of multimodal exploration. We make no claim of universal insensitivity to initial values. Only one simulated data set is analysed per setting. So the examples support an implementation check and a comparison of computational behavior, not an estimate of repeated-sampling bias or credible-interval coverage. The common-variance model and the chosen proper priors are kept fixed, so that their effects stay visible in the interpretation.
+
+Every number, table, and figure in this report comes from `R/task2.R` and is read back from `results/` at render time. The full-precision tables are stored in `results/tables/` as CSV files.
