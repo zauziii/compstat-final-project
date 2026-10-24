@@ -901,7 +901,7 @@ save_sci(
   fig_joint_posterior,
   "task2_joint_posterior_mu1_mu2",
   width = "double",
-  height_mm = 75
+  height_mm = 80
 )
 
 # Compare all ordered draws vs. occupancy-conditioned ordered draws (min(n1, n2) >= 5)
