@@ -17,15 +17,25 @@ format:
     documentclass: article
     papersize: a4
     fontsize: 11pt
-    linestretch: 1.10
+    linestretch: 1.05
     geometry:
-      - top=15mm
-      - bottom=15mm
-      - left=13mm
-      - right=13mm
-    mainfont: "Latin Modern Roman"
-    sansfont: "Latin Modern Sans"
-    monofont: "Latin Modern Mono"
+      - top=14mm
+      - bottom=14mm
+      - left=12mm
+      - right=12mm
+    mainfont: "lmroman10-regular.otf"
+    mainfontoptions:
+      - BoldFont=lmroman10-bold.otf
+      - ItalicFont=lmroman10-italic.otf
+      - BoldItalicFont=lmroman10-bolditalic.otf
+    sansfont: "lmsans10-regular.otf"
+    sansfontoptions:
+      - BoldFont=lmsans10-bold.otf
+      - ItalicFont=lmsans10-oblique.otf
+      - BoldItalicFont=lmsans10-boldoblique.otf
+    monofont: "lmmono10-regular.otf"
+    monofontoptions:
+      - ItalicFont=lmmono10-italic.otf
     toc: false
     number-sections: false
     colorlinks: true
@@ -218,15 +228,11 @@ X_boot <- X[indices, , drop = FALSE]
 
 # Stationary bootstrap (input checks and return_indices output omitted)
 restart_probability <- 1 / mean_block_length
-indices <- integer(n)
-indices[1] <- sample.int(n, size = 1)
+indices <- integer(n); indices[1] <- sample.int(n, size = 1)
 if (n >= 2) {
   for (t in 2:n) {
-    if (runif(1) < restart_probability) {
-      indices[t] <- sample.int(n, size = 1)
-    } else {
-      indices[t] <- if (indices[t - 1] == n) 1L else indices[t - 1] + 1L
-    }
+    if (runif(1) < restart_probability) indices[t] <- sample.int(n, size = 1)
+    else indices[t] <- if (indices[t - 1] == n) 1L else indices[t - 1] + 1L
   }
 }
 X_boot <- X[indices, , drop = FALSE]
@@ -332,16 +338,14 @@ for (b in seq_len(n_boot)) {
     fixed = fixed_block_bootstrap(X, block_length = block_length),
     stationary = stationary_bootstrap(X, mean_block_length = block_length))
   bootstrap_whitening <- whiten_ts(X_boot)
-  bootstrap_autocovariances <- autocov_set(
-    bootstrap_whitening$whitened_data, lags, symmetrize = symmetrize)
+  bootstrap_autocovariances <- autocov_set(bootstrap_whitening$whitened_data, lags,
+                                           symmetrize = symmetrize)
   bootstrap_decomposition <- sos_decompose(bootstrap_autocovariances)
   U_bootstrap[[b]] <- bootstrap_decomposition$directions
   # Progress-message code omitted
 }
 f_result <- compute_f(U_original, U_bootstrap)
-f <- f_result$f
-g <- f + phi
-q_hat <- which.min(g) - 1L
+f <- f_result$f; g <- f + phi; q_hat <- which.min(g) - 1L
 criterion <- data.frame(dimension = 0:(ncol(X) - 1), f, phi, g)
 # Remaining diagnostics and returned fit object omitted
 ```
@@ -401,33 +405,25 @@ simulation_worker <- function(job) {
   size_id <- match(job$sample_size, sample_sizes)
   data_seed <- master_seed + size_id * 100000L + job$replicate
   X <- simulate_setting1(job$sample_size, seed = data_seed)
-  rows <- vector("list", length(methods) * length(block_lengths))
-  index <- 0L
-
-  for (method in methods) {
-    for (block_length in block_lengths) {
-      index <- index + 1L
-      bootstrap_seed <- master_seed + 1000000L + size_id * 1000000L +
-        job$replicate * 10L + index
-      answer <- tryCatch({
-        fit <- ladle_fit(X, lags, n_boot = n_boot_simulation,
-          bootstrap_method = method, block_length = block_length,
-          seed = bootstrap_seed)
-        checks <- check_fit(fit)
-        list(q_hat = fit$q_hat, error = "", checks = checks,
-          criterion_gap = sort(fit$criterion$g)[2] - min(fit$criterion$g))
-      }, error = function(e) {
-        list(q_hat = NA_integer_, error = conditionMessage(e),
-          checks = c(NA_real_, NA_real_), criterion_gap = NA_real_)
-      })
-
-      # Seed, timing, numerical-check, and error columns are also saved
-      rows[[index]] <- data.frame(
-        sample_size = job$sample_size, replicate = job$replicate,
-        method, block_length, true_dimension,
-        estimated_dimension = answer$q_hat,
-        criterion_gap = answer$criterion_gap)
-    }
+  rows <- vector("list", length(methods) * length(block_lengths)); index <- 0L
+  for (method in methods) for (block_length in block_lengths) {
+    index <- index + 1L
+    bootstrap_seed <- master_seed + 1000000L + size_id * 1000000L +
+      job$replicate * 10L + index
+    answer <- tryCatch({
+      fit <- ladle_fit(X, lags, n_boot = n_boot_simulation,
+                       bootstrap_method = method, block_length = block_length,
+                       seed = bootstrap_seed)
+      checks <- check_fit(fit)
+      list(q_hat = fit$q_hat, error = "", checks = checks,
+           criterion_gap = sort(fit$criterion$g)[2] - min(fit$criterion$g))
+    }, error = function(e) list(q_hat = NA_integer_, error = conditionMessage(e),
+                                checks = c(NA_real_, NA_real_), criterion_gap = NA_real_))
+    # Seed, timing, numerical-check, and error columns are also saved
+    rows[[index]] <- data.frame(sample_size = job$sample_size,
+                                replicate = job$replicate, method, block_length,
+                                true_dimension, estimated_dimension = answer$q_hat,
+                                criterion_gap = answer$criterion_gap)
   }
   do.call(rbind, rows)
 }

@@ -20,6 +20,7 @@
 #             in diagnostic screening.
 # 22.10.2026: append the team's code after section 6.7 and save
 #             the added results in task2_sim.RData; remove section 8.4.
+# 24.10.2026: resize charts.
 # ============================================================================
 
 ## ---- 0. shared project setup ----------------------------------------------
@@ -832,7 +833,7 @@ save_sci(
   fig_allocation_probabilities,
   "task2_allocation_probabilities",
   width = "double",
-  height_mm = 60
+  height_mm = 75
 )
 
 # ---- 6.7 Faithful traces after posterior relabeling ------------------------
@@ -900,7 +901,7 @@ save_sci(
   fig_joint_posterior,
   "task2_joint_posterior_mu1_mu2",
   width = "double",
-  height_mm = 80
+  height_mm = 75
 )
 
 # Compare all ordered draws vs. occupancy-conditioned ordered draws (min(n1, n2) >= 5)
