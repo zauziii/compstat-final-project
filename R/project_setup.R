@@ -1,14 +1,14 @@
 # ============================================================================
 # Shared project setup for the MAST32001 final assignment (Tasks 1 and 2).
-# Source this file at the top of either analysis scirpt, then add the
-# task-specific packages with ensure_pacakges():
+# Source this file at the top of either analysis script, then add the
+# task-specific packages with ensure_packages():
 #
 #   source("R/project_setup.R")
-#   ensure_packages(c("JADE"))                                         # Task 1
+#   ensure_packages(c("JADE"))      # Task 1
 #   ensure_packages(c("posterior")) # Task 2
 #
 # It locates the project root, creates the output directories, loads the common
-# packages, installs the global plorring theme and provides save_sci() for
+# packages, installs the global plotting theme and provides save_sci() for
 # publication-ready PNG exports.
 # All figures are exported as PNG only; the Quarto reports include these PNGs.
 # ============================================================================
