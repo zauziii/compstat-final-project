@@ -1,0 +1,26 @@
+---
+title: "Self and peer assessment"
+subtitle: "Group O"
+author:
+  - name: Kaiwei Fu
+  - name: Lingyu Wang
+  - name: Sami Pönkä
+  - name: Zhi Zhou
+date: today
+format: pdf
+editor: visual
+---
+
+## Self assessment
+
+I mainly worked on Task 2 with Sami. I worked with Lingyu in person on the harmonization, putting everyone's part together into one report. Kaiwei and Sami also joined the harmonization but remotely. I also uploaded my solution of Task 1 to my branch and wrote the README for the project.
+
+## Peer assessments
+
+**Kaiwei Fu.** He mainly worked on Task 1 with Lingyu and joined every discussion online and in person.
+
+**Lingyu Wang.** He mainly worked on Task 1 with Kaiwei and met me in person to combine our parts into final report. 
+
+**Sami Pönkä.** He mainly worked on Task 2 with me and gave very useful comments.
+
+The group worked well together. Everyone was active and responsible, online and in person. Everyone took responsibility for the final assignment, not just the parts mentioned above.
