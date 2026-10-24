@@ -76,7 +76,7 @@ crossref:
   fig-prefix: "Figure"
   tbl-title: "Table"
   tbl-prefix: "Table"
-bibliography: refs2.bib
+bibliography: refs.bib
 reference-section-title: References
 csl: ieee.csl
 ---
