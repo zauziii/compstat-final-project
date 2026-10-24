@@ -278,7 +278,7 @@ recovery_plot <- ggplot(recovery_plot_data,
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
   labs(x = "Sample size n", y = "Pr(q-hat = 5)", colour = NULL, shape = NULL,
        caption = "Error bars: 95% Wilson confidence intervals")
-save_sci(recovery_plot, "task1_d_recovery_probability", "double", height_mm = 100)
+save_sci(recovery_plot, "task1_d_recovery_probability", "double", height_mm = 75)
 
 # Extend the eight-colour setup palette with two neutral shades for q = 0,...,9.
 dimension_colours <- setNames(c(plot_palette, "#777777", "#BBBBBB"), 0:9)
@@ -297,7 +297,7 @@ distribution_plot <- ggplot(distribution_plot_data,
   labs(x = NULL, y = "Proportion of repetitions", fill = "Estimated q",
        caption = "F: fixed bootstrap; S: stationary bootstrap; number: block length") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-save_sci(distribution_plot, "task1_d_dimension_distribution", "double", height_mm = 110)
+save_sci(distribution_plot, "task1_d_dimension_distribution", "double", height_mm = 80)
 
 X <- as.matrix(read.table(file.path(project_root, "data", "timeseries.dat"), header = FALSE))
 stopifnot(is.numeric(X), all(is.finite(X)), nrow(X) > max(lags), ncol(X) == 10L)
@@ -384,7 +384,7 @@ components_plot <- ggplot(component_curves, aes(dimension, value, colour = curve
   scale_y_continuous(limits = c(0, max(application_criteria$g) * 1.08)) +
   labs(x = "Candidate dimension k", y = "Criterion value", colour = NULL,
        shape = NULL, linetype = NULL)
-save_sci(components_plot, "task1_e_ladle_components", "double", height_mm = 135)
+save_sci(components_plot, "task1_e_ladle_components", "double", height_mm = 120)
 
 sensitivity_data <- transform(application_criteria,
                                block_length = factor(block_length, levels = block_lengths))
@@ -402,7 +402,7 @@ sensitivity_plot <- ggplot(sensitivity_data, aes(dimension, g, colour = block_le
   scale_x_continuous(breaks = seq(0, 9, 2)) +
   labs(x = "Candidate dimension k", y = "g(k)", colour = "Block length L",
        shape = "Block length L", caption = "Faint lines: individual seed runs; bold lines: means")
-save_sci(sensitivity_plot, "task1_e_block_sensitivity", "double", height_mm = 100)
+save_sci(sensitivity_plot, "task1_e_block_sensitivity", "double", height_mm = 75)
 
 primary_id <- which(application_jobs$method == "fixed" &
   application_jobs$block_length == primary_block_length & application_jobs$seed_run == 1L)
@@ -456,7 +456,7 @@ component_acf_plot <- ggplot(component_acf_data, aes(lag, acf, colour = classifi
   scale_x_continuous(breaks = c(0, 12, 24)) +
   scale_y_continuous(limits = c(-0.5, 1), breaks = c(-0.5, 0, 0.5, 1)) +
   labs(x = "Lag", y = "ACF", colour = NULL)
-save_sci(component_acf_plot, "task1_e_component_acf", "double", height_mm = 115)
+save_sci(component_acf_plot, "task1_e_component_acf", "double", height_mm = 100)
 
 parameters <- data.frame(
   parameter = c("sample_sizes", "repetitions_per_sample_size", "simulation_bootstraps",
