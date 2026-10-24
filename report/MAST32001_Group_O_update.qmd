@@ -4,7 +4,7 @@ subtitle: "Final Course Report, Winter Semester 2026"
 author:
   - name: Kaiwei Fu
   - name: Lingyu Wang
-  - name: Sami Sönkä
+  - name: Sami Pönkä
   - name: Zhi Zhou
 date: today
 date-format: "D MMMM YYYY"
@@ -23,20 +23,9 @@ format:
       - bottom=14mm
       - left=12mm
       - right=12mm
-    # Load the same Latin Modern fonts by file name for macOS TeX Live.
-    mainfont: "lmroman10-regular.otf"
-    mainfontoptions:
-      - BoldFont=lmroman10-bold.otf
-      - ItalicFont=lmroman10-italic.otf
-      - BoldItalicFont=lmroman10-bolditalic.otf
-    sansfont: "lmsans10-regular.otf"
-    sansfontoptions:
-      - BoldFont=lmsans10-bold.otf
-      - ItalicFont=lmsans10-oblique.otf
-      - BoldItalicFont=lmsans10-boldoblique.otf
-    monofont: "lmmono10-regular.otf"
-    monofontoptions:
-      - ItalicFont=lmmono10-italic.otf
+    mainfont: "Latin Modern Roman"
+    sansfont: "Latin Modern Sans"
+    monofont: "Latin Modern Mono"
     toc: false
     number-sections: false
     colorlinks: true
@@ -52,7 +41,6 @@ format:
         \usepackage{booktabs}
         \usepackage{caption}
         \usepackage{float}
-        \usepackage{placeins}
         \usepackage{needspace}
         \usepackage{microtype}
         \usepackage{fancyhdr}
@@ -88,6 +76,9 @@ crossref:
   fig-prefix: "Figure"
   tbl-title: "Table"
   tbl-prefix: "Table"
+bibliography: refs2.bib
+reference-section-title: References
+csl: ieee.csl
 ---
 
 ```{r}
@@ -96,7 +87,7 @@ crossref:
 library(knitr)
 
 # This QMD lives in the Task 1 project root (not in report/ as Task 2 does).
-root <- normalizePath(".")
+root <- normalizePath("..")
 read_result <- function(filename) {
   path <- file.path(root, "results", "tables", filename)
   if (!file.exists(path))
@@ -473,7 +464,6 @@ The primary fit identifies three latent linear combinations with serial dependen
 
 These directions are not a subset of the original variables, and the remaining components need not be independent, Gaussian, or free of nonlinear dependence. The interpretation assumes approximate stationarity and the second-order source separation model, and depends on the selected lags. Agreement at $L=20$ and $40$ supports three signals, but the unknown true dimension and sensitivity at $L=10$ limit the conclusion.
 
-\FloatBarrier
 
 # Task 2: Bayesian Mixture Models Using MCMC
 
