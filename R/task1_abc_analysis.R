@@ -184,7 +184,7 @@ covariance_plot <- ggplot(covariance_plot_data, aes(row, column, fill = value)) 
   scale_x_continuous(breaks = seq_len(ncol(X)), expand = c(0, 0)) +
   scale_y_continuous(breaks = seq_len(ncol(X)), expand = c(0, 0)) +
   coord_equal() + labs(x = "Variable", y = "Variable")
-save_sci(covariance_plot, "task1_whitening_covariance", "double", height_mm = 100)
+save_sci(covariance_plot, "task1_whitening_covariance", "double", height_mm = 75)
 
 # Part B: bootstrap methods and preservation of local dependence
 # ----------------------------------------------------------------
@@ -373,7 +373,7 @@ acf_plot <- ggplot(acf_plot_data, aes(lag, acf, colour = method,
   scale_linetype_manual(values = c(1, 2, 3, 4), labels = acf_labels) +
   labs(x = "Lag", y = "Sample autocorrelation", colour = NULL, shape = NULL,
        linetype = NULL, title = paste0("Local dependence for variable X", representative_variable))
-save_sci(acf_plot, "task1_bootstrap_acf_comparison", "double", height_mm = 105)
+save_sci(acf_plot, "task1_bootstrap_acf_comparison", "double", height_mm = 80)
 
 method_order <- c(
   "iid",
@@ -398,7 +398,7 @@ error_plot <- ggplot(dependence_results,
                               "Stationary\nL=10", "Stationary\nL=20", "Stationary\nL=40")) +
   labs(x = NULL, y = "Mean absolute ACF error (lags 1–20)",
        title = "Preservation of local dependence")
-save_sci(error_plot, "task1_bootstrap_acf_error", "double", height_mm = 100)
+save_sci(error_plot, "task1_bootstrap_acf_error", "double", height_mm = 75)
 
 # Part C: f, phi and g checked on Setting 1 simulated data
 # --------------------------------------------------------
@@ -512,7 +512,7 @@ ladle_plot <- ggplot(ladle_plot_data, aes(dimension, value, colour = curve,
   scale_x_continuous(breaks = seq(0, 9, 2)) +
   labs(x = "Candidate dimension k", y = "Criterion value", colour = NULL,
        shape = NULL, linetype = NULL)
-save_sci(ladle_plot, "task1_ladle_criterion", "double", height_mm = 95)
+save_sci(ladle_plot, "task1_ladle_criterion", "double", height_mm = 75)
 
 message("Task 1 A--C analysis completed.")
 message("Data: ", data_dir)
