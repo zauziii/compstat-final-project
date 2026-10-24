@@ -1,0 +1,4 @@
+"component","lag","absolute_acf","block_length","fixed_approximate_within_block_fraction","stationary_no_restart_probability"
+3,8,0.287010600701885,10,0.2,0.43046721
+3,8,0.287010600701885,20,0.6,0.663420431289062
+3,8,0.287010600701885,40,0.8,0.816651803662262
