@@ -16,7 +16,8 @@ find_project_root <- function() {
 }
 
 project_root <- find_project_root()
-source(file.path(project_root, "R", "task1_functions.R"))
+source(file.path(project_root, "R","project_setup.R"))
+source(file.path(project_root, "R","task1_functions.R"))
 rjd_iteration_limit <- 10000L
 sos_decompose_part_c <- sos_decompose
 sos_decompose <- function(C_list, rjd_eps = 1e-6,
@@ -251,56 +252,43 @@ paired_comparisons <- do.call(rbind, lapply(sample_sizes, function(n) {
 }))
 write_task1_csv(paired_comparisons, table_dir, "task1_d_paired_method_comparison.csv")
 
-method_colours <- c(fixed = "#2C7BB6", stationary = "#1A9641")
-grDevices::png(file.path(figure_dir, "task1_d_recovery_probability.png"),
-              width = 11, height = 4.3, units = "in", res = 220)
-graphics::par(mfrow = c(1, 3), mar = c(4.3, 4.3, 3, 0.8))
-for (L in block_lengths) {
-  graphics::plot(NA, xlim = c(0.8, length(sample_sizes) + 0.2),
-                 ylim = c(0, 1), xaxt = "n",
-                 xlab = "Sample size n", ylab = "Pr(q-hat = 5)",
-                 main = paste0("Block length = ", L))
-  graphics::axis(1, at = seq_along(sample_sizes), labels = sample_sizes)
-  graphics::abline(h = seq(0, 1, 0.2), col = "grey92")
-  for (method in methods) {
-    part <- simulation_summary[simulation_summary$block_length == L &
-                                 simulation_summary$method == method, ]
-    part <- part[order(part$sample_size), ]
-    x <- seq_along(sample_sizes) + if (method == "fixed") -0.04 else 0.04
-    graphics::arrows(x, part$ci_lower, x, part$ci_upper, angle = 90, code = 3,
-                     length = 0.03, col = method_colours[method])
-    graphics::lines(x, part$correct_rate, type = "o", pch = if (method == "fixed") 16 else 17,
-                    col = method_colours[method])
-  }
-  graphics::legend("bottomright", c("Fixed", "Stationary", "95% Wilson intervals"),
-                   col = c(method_colours, "grey45"), pch = c(16, 17, NA),
-                   lty = c(1, 1, 1), bty = "n", cex = 0.75)
-}
-grDevices::dev.off()
+method_colours <- c(fixed = plot_palette[1], stationary = plot_palette[3])
+recovery_plot_data <- transform(simulation_summary,
+                                sample_size = factor(sample_size, levels = sample_sizes))
+dodge <- position_dodge(width = 0.18)
+recovery_plot <- ggplot(recovery_plot_data,
+                        aes(sample_size, correct_rate, colour = method,
+                            shape = method, group = method)) +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.12,
+                 linewidth = 0.4, position = dodge) +
+  geom_line(linewidth = 0.5, position = dodge) +
+  geom_point(size = 1.8, position = dodge) +
+  facet_wrap(~block_length, nrow = 1, labeller = label_bquote(L == .(block_length))) +
+  scale_colour_manual(values = method_colours, labels = c("Fixed", "Stationary")) +
+  scale_shape_manual(values = c(fixed = 16, stationary = 17), labels = c("Fixed", "Stationary")) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  labs(x = "Sample size n", y = "Pr(q-hat = 5)", colour = NULL, shape = NULL,
+       caption = "Error bars: 95% Wilson confidence intervals")
+save_sci(recovery_plot, "task1_d_recovery_probability", "double", height_mm = 100)
 
-dimension_colours <- c("#F7FBFF", "#DEEBF7", "#C6DBEF", "#9ECAE1", "#6BAED6",
-                       "#238B45", "#FDD0A2", "#FDAE6B", "#F16913", "#A63603")
-grDevices::png(file.path(figure_dir, "task1_d_dimension_distribution.png"),
-              width = 11, height = 4.4, units = "in", res = 220)
-graphics::par(mfrow = c(1, 3), mar = c(4, 4, 3, 1), oma = c(2, 0, 0, 0))
-for (n in sample_sizes) {
-  values <- sapply(methods, function(method) {
-    sapply(block_lengths, function(L) {
-      part <- dimension_frequencies[dimension_frequencies$sample_size == n &
-        dimension_frequencies$method == method & dimension_frequencies$block_length == L, ]
-      part$proportion[order(part$estimated_dimension)]
-    })
-  }, simplify = "array")
-  values <- matrix(values, nrow = 10)
-  graphics::barplot(values, col = dimension_colours, border = NA,
-                    names.arg = c(paste0("F", block_lengths), paste0("S", block_lengths)),
-                    ylim = c(0, 1), ylab = "Proportion of repetitions", main = paste0("n = ", n))
-}
-graphics::par(fig = c(0, 1, 0, 0.06), new = TRUE, mar = rep(0, 4))
-graphics::plot.new()
-graphics::legend("center", legend = paste0("q=", 0:9), fill = dimension_colours,
-                 horiz = TRUE, bty = "n", cex = 0.8)
-grDevices::dev.off()
+# Extend the eight-colour setup palette with two neutral shades for q = 0,...,9.
+dimension_colours <- setNames(c(plot_palette, "#777777", "#BBBBBB"), 0:9)
+distribution_plot_data <- transform(dimension_frequencies,
+  setting = factor(paste0(ifelse(method == "fixed", "F", "S"), block_length),
+                   levels = c(paste0("F", block_lengths), paste0("S", block_lengths))),
+  estimated_dimension = factor(estimated_dimension, levels = 0:9))
+distribution_plot <- ggplot(distribution_plot_data,
+                            aes(setting, proportion, fill = estimated_dimension)) +
+  geom_col(width = 0.75, position = position_stack(reverse = TRUE)) +
+  facet_wrap(~sample_size, nrow = 1, labeller = label_bquote(n == .(sample_size))) +
+  scale_fill_manual(values = dimension_colours, drop = FALSE) +
+  scale_y_continuous(breaks = seq(0, 1, 0.2), expand = expansion(mult = c(0, 0.02))) +
+  coord_cartesian(ylim = c(0, 1)) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
+  labs(x = NULL, y = "Proportion of repetitions", fill = "Estimated q",
+       caption = "F: fixed bootstrap; S: stationary bootstrap; number: block length") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+save_sci(distribution_plot, "task1_d_dimension_distribution", "double", height_mm = 110)
 
 X <- as.matrix(read.table(file.path(project_root, "data", "timeseries.dat"), header = FALSE))
 stopifnot(is.numeric(X), all(is.finite(X)), nrow(X) > max(lags), ncol(X) == 10L)
@@ -362,51 +350,50 @@ application_stability <- do.call(rbind, lapply(split(application_summary, intera
 }))
 write_task1_csv(application_stability, table_dir, "task1_e_seed_stability.csv")
 
-grDevices::png(file.path(figure_dir, "task1_e_ladle_components.png"),
-              width = 11, height = 7, units = "in", res = 220)
-graphics::par(mfrow = c(2, 3), mar = c(4, 4, 3, 1))
-for (method in methods) {
-  for (L in block_lengths) {
-    part <- application_criteria[application_criteria$method == method &
-      application_criteria$block_length == L & application_criteria$seed_run == 1L, ]
-    q_hat <- part$dimension[which.min(part$g)]
-    graphics::matplot(part$dimension, part[, c("f", "phi", "g")], type = "o",
-                      pch = c(1, 2, 16), lty = c(2, 3, 1),
-                      col = c("#2C7BB6", "#D7191C", "black"),
-                      ylim = c(0, max(application_criteria$g) * 1.08),
-                      xlab = "Candidate dimension k", ylab = "Criterion value",
-                      main = paste0(method, ", L=", L, ": q-hat=", q_hat))
-    graphics::abline(v = q_hat, col = "grey50", lty = 3)
-    graphics::legend("topright", c("f(k)", "phi(k)", "g(k)"),
-                     col = c("#2C7BB6", "#D7191C", "black"),
-                     lty = c(2, 3, 1), pch = c(1, 2, 16), bty = "n", cex = 0.75)
-  }
-}
-grDevices::dev.off()
+component_criteria <- subset(application_criteria, seed_run == 1L)
+component_estimates <- subset(application_summary, seed_run == 1L)
+component_curves <- tidyr::pivot_longer(component_criteria, c(f, phi, g),
+                                       names_to = "curve", values_to = "value")
+components_plot <- ggplot(component_curves, aes(dimension, value, colour = curve,
+                                               shape = curve, linetype = curve)) +
+  geom_vline(data = component_estimates, aes(xintercept = estimated_dimension),
+             colour = "grey50", linetype = 3, linewidth = 0.3) +
+  geom_line(linewidth = 0.5) + geom_point(size = 1.4) +
+  geom_text(data = component_estimates,
+            aes(x = Inf, y = Inf, label = paste0("q-hat = ", estimated_dimension)),
+            inherit.aes = FALSE, hjust = 1.1, vjust = 1.5, size = 3, family = "sans") +
+  facet_grid(method ~ block_length,
+              labeller = labeller(method = c(fixed = "Fixed", stationary = "Stationary"),
+                                  block_length = function(x) paste0("L = ", x))) +
+  scale_colour_manual(values = c(f = plot_palette[1], phi = plot_palette[2], g = "#000000"),
+                       breaks = c("f", "phi", "g"), labels = c("f(k)", "phi(k)", "g(k)")) +
+  scale_shape_manual(values = c(f = 1, phi = 2, g = 16), breaks = c("f", "phi", "g"),
+                      labels = c("f(k)", "phi(k)", "g(k)")) +
+  scale_linetype_manual(values = c(f = 2, phi = 3, g = 1), breaks = c("f", "phi", "g"),
+                         labels = c("f(k)", "phi(k)", "g(k)")) +
+  scale_x_continuous(breaks = seq(0, 9, 2)) +
+  scale_y_continuous(limits = c(0, max(application_criteria$g) * 1.08)) +
+  labs(x = "Candidate dimension k", y = "Criterion value", colour = NULL,
+       shape = NULL, linetype = NULL)
+save_sci(components_plot, "task1_e_ladle_components", "double", height_mm = 135)
 
-grDevices::png(file.path(figure_dir, "task1_e_block_sensitivity.png"),
-              width = 9, height = 4.6, units = "in", res = 220)
-graphics::par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
-length_colours <- c("#E69F00", "#0072B2", "#009E73")
-for (method in methods) {
-  graphics::plot(NA, xlim = c(0, 9), ylim = range(c(0, application_criteria$g)),
-                 xlab = "Candidate dimension k", ylab = "g(k)", main = method)
-  for (j in seq_along(block_lengths)) {
-    part <- application_criteria[application_criteria$method == method &
-      application_criteria$block_length == block_lengths[j], ]
-    for (run in seq_len(n_seed_runs)) {
-      one <- part[part$seed_run == run, ]
-      graphics::lines(one$dimension, one$g,
-                      col = grDevices::adjustcolor(length_colours[j], alpha.f = 0.25))
-    }
-    average <- aggregate(g ~ dimension, part, mean)
-    graphics::lines(average$dimension, average$g, type = "o", pch = j,
-                    lwd = 2, col = length_colours[j])
-  }
-  graphics::legend("topright", legend = paste0("L=", block_lengths),
-                   col = length_colours, lty = 1, pch = 1:3, bty = "n", cex = 0.8)
-}
-grDevices::dev.off()
+sensitivity_data <- transform(application_criteria,
+                               block_length = factor(block_length, levels = block_lengths))
+sensitivity_mean <- aggregate(g ~ method + block_length + dimension,
+                               sensitivity_data, mean)
+sensitivity_plot <- ggplot(sensitivity_data, aes(dimension, g, colour = block_length)) +
+  geom_line(aes(group = interaction(block_length, seed_run)), alpha = 0.25,
+             linewidth = 0.3) +
+  geom_line(data = sensitivity_mean, aes(group = block_length), linewidth = 0.7) +
+  geom_point(data = sensitivity_mean, aes(shape = block_length), size = 1.6) +
+  facet_wrap(~method, nrow = 1,
+              labeller = as_labeller(c(fixed = "Fixed", stationary = "Stationary"))) +
+  scale_colour_manual(values = plot_palette[1:3]) +
+  scale_shape_manual(values = c(16, 17, 15)) +
+  scale_x_continuous(breaks = seq(0, 9, 2)) +
+  labs(x = "Candidate dimension k", y = "g(k)", colour = "Block length L",
+       shape = "Block length L", caption = "Faint lines: individual seed runs; bold lines: means")
+save_sci(sensitivity_plot, "task1_e_block_sensitivity", "double", height_mm = 100)
 
 primary_id <- which(application_jobs$method == "fixed" &
   application_jobs$block_length == primary_block_length & application_jobs$seed_run == 1L)
@@ -442,17 +429,25 @@ if (primary$summary$estimated_dimension > 0L) {
   )
   write_task1_csv(dependence_retention, table_dir, "task1_e_dependence_retention.csv")
 }
-grDevices::png(file.path(figure_dir, "task1_e_component_acf.png"),
-              width = 12, height = 6, units = "in", res = 220)
-graphics::par(mfrow = c(2, 5), mar = c(4.2, 4.2, 3.2, 0.8),
-              mgp = c(2.3, 0.7, 0))
-for (j in seq_len(ncol(sources))) {
-  stats::acf(sources[, j], lag.max = 24, ylim = c(-0.5, 1),
-             main = paste0("Component ", j), ci = 0,
-             col = if (j <= primary$summary$estimated_dimension) "#2C7BB6" else "grey40")
-  graphics::abline(h = c(-1, 1) * 1.96 / sqrt(nrow(X)), col = "grey65", lty = 3)
-}
-grDevices::dev.off()
+component_acf_data <- do.call(rbind, lapply(seq_len(ncol(sources)), function(j) {
+  data.frame(lag = 0:24,
+             acf = as.numeric(stats::acf(sources[, j], lag.max = 24, plot = FALSE)$acf),
+             component = paste("Component", j),
+             classification = if (j <= primary$summary$estimated_dimension) "Signal" else "Noise candidate")
+}))
+component_acf_data$component <- factor(component_acf_data$component,
+                                       levels = paste("Component", seq_len(ncol(sources))))
+component_acf_plot <- ggplot(component_acf_data, aes(lag, acf, colour = classification)) +
+  geom_hline(yintercept = 0, linewidth = 0.3, colour = "grey50") +
+  geom_hline(yintercept = c(-1, 1) * 1.96 / sqrt(nrow(X)),
+             colour = "grey65", linetype = 3, linewidth = 0.3) +
+  geom_segment(aes(xend = lag, yend = 0), linewidth = 0.4) +
+  facet_wrap(~component, ncol = 5) +
+  scale_colour_manual(values = c(Signal = plot_palette[1], "Noise candidate" = "grey40")) +
+  scale_x_continuous(breaks = c(0, 12, 24)) +
+  scale_y_continuous(limits = c(-0.5, 1), breaks = c(-0.5, 0, 0.5, 1)) +
+  labs(x = "Lag", y = "ACF", colour = NULL)
+save_sci(component_acf_plot, "task1_e_component_acf", "double", height_mm = 115)
 
 parameters <- data.frame(
   parameter = c("sample_sizes", "repetitions_per_sample_size", "simulation_bootstraps",
