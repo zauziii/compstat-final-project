@@ -23,8 +23,8 @@
 # ============================================================================
 
 ## ---- 0. shared project setup ----------------------------------------------
-root <- normalizePath("..")
-source(file.path("R", "project_setup.R"))
+root <- normalizePath("...")
+source(file.path(root, file.path("R", "project_setup.R")))
 ensure_packages(c("posterior"))
 
 ## ---- 1. Part A: Gibbs sampler implementation ------------------------------
@@ -189,7 +189,7 @@ run_chains <- function(y,
                        inits,
                        n_iter = 5000,
                        burn = 1000,
-                       seed_base = 100) {
+                       seed_base = 261024100) {
   ans <- lapply(seq_along(inits), function(i) {
     message("Chain ", i, ": ", names(inits)[i])
     rgibbs_mix(
@@ -207,13 +207,13 @@ chains_sep <- run_chains(y_sep,
                          inits,
                          n_iter = 20000,
                          burn = 5000,
-                         seed_base = 100)
+                         seed_base = 261024100)
 message("Overlapping simulation")
 chains_ov  <- run_chains(y_ov,
                          inits,
                          n_iter = 60000,
                          burn = 15000,
-                         seed_base = 200)
+                         seed_base = 261024100)
 
 # ---- 2.3 Posterior relabeling after sampling -------------------------------
 relabel_chain <- function(ch) {
@@ -700,7 +700,7 @@ chains_f <- run_chains(
   inits_f,
   n_iter = 20000,
   burn = 5000,
-  seed_base = 300
+  seed_base = 261024300
 )
 chain_f <- chains_f[[1]]   # First raw chain retained for compatibility.
 rl_f <- pool_relabelled(chains_f)
@@ -1088,7 +1088,7 @@ chains_f_unequal <- lapply(seq_along(inits_f), function(i) {
     n_iter = 20000,
     burn = 5000,
     init = inits_f[[i]],
-    seed = 400 + i
+    seed = 261024400 + i
   )
 })
 names(chains_f_unequal) <- names(inits_f)

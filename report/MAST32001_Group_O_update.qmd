@@ -1,47 +1,83 @@
 ---
-title: "MAST32001 Computational Statistics"
-subtitle: "Final Course Report, Winter Semester 2026"
+title: "MAST32001 Computational Statistics — Course Assignment"
 author:
   - name: Kaiwei Fu
   - name: Lingyu Wang
-  - name: Sami Sönkä
+  - name: Sami Pönkä
   - name: Zhi Zhou
 date: today
+date-format: "D MMMM YYYY"
 lang: en
+engine: knitr
+
 format:
   pdf:
-    documentclass: article
     pdf-engine: xelatex
+    documentclass: article
     papersize: a4
-    fig-width: 6.5
-    fig-height: 4.5
-    fig-cap-location: bottom
-    fig-pos: "!htbp"
-    number-sections: false
-    toc: false
-    linestretch: 1.25
-    margin-left: 25mm
-    margin-right: 25mm
-    margin-top: 25mm
-    margin-bottom: 25mm
-    mainfont: "Times New Roman"
-    CJKmainfont: "Songti SC"
-    sansfont: "Helvetica"
-    monofont: "Courier New"
     fontsize: 11pt
+    linestretch: 1.05
+    geometry:
+      - top=14mm
+      - bottom=14mm
+      - left=12mm
+      - right=12mm
+    mainfont: "Latin Modern Roman"
+    sansfont: "Latin Modern Sans"
+    monofont: "Latin Modern Mono"
+    toc: false
+    number-sections: false
     colorlinks: true
-    linkcolor: darkblue
-    citecolor: darkblue
-    urlcolor: darkblue
-    reference-section-title: References
-    biblio-style: "apalike"
-    header-includes:
-      - \definecolor{darkblue}{RGB}{0,70,140}
-      - \usepackage{placeins}
+    linkcolor: black
+    urlcolor: black
+    citecolor: black
+    fig-dpi: 600
+    fig-cap-location: bottom
+    tbl-cap-location: top
+    keep-tex: false
+    include-in-header:
+      text: |
+        \usepackage{booktabs}
+        \usepackage{caption}
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{microtype}
+        \usepackage{fancyhdr}
+        \captionsetup{font=small,labelfont=bf,labelsep=period,
+          justification=raggedright,singlelinecheck=false}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{0.45em}
+        \setlength{\emergencystretch}{2em}
+        \renewcommand{\arraystretch}{0.9}
+        \setlength{\tabcolsep}{5pt}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \fancyfoot[C]{\small\thepage}
+        \setlength{\footskip}{6mm}
+        \renewcommand{\headrulewidth}{0pt}
+        \renewcommand{\footrulewidth}{0pt}
+        \fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}
+          \renewcommand{\headrulewidth}{0pt}}
+
 execute:
   echo: false
-  warning: false
   message: false
+  warning: false
+  error: false
+  cache: false
+
+fig-align: center
+fig-pos: H
+tbl-pos: H
+tbl-cap-location: top
+crossref:
+  fig-title: "Figure"
+  fig-prefix: "Figure"
+  tbl-title: "Table"
+  tbl-prefix: "Table"
+bibliography: refs2.bib
+reference-section-title: References
+csl: ieee.csl
 ---
 
 # Task 1: Ladle Estimation of Signal Dimension Using Time Series Bootstrap Methods
