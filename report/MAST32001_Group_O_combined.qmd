@@ -46,6 +46,12 @@ format:
     fig-cap-location: bottom
     tbl-cap-location: top
     keep-tex: false
+    include-before-body:
+      text: |
+        \begin{center}
+        \small
+        Code repository: \url{https://github.com/zauziii/compstat-final-project}
+        \end{center}
     include-in-header:
       text: |
         \usepackage{booktabs}
