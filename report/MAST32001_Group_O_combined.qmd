@@ -76,13 +76,13 @@ crossref:
   fig-prefix: "Figure"
   tbl-title: "Table"
   tbl-prefix: "Table"
-bibliography: refs2.bib
+bibliography: refs.bib
 reference-section-title: References
 csl: ieee.csl
 ---
 
 ```{r}
-#| label: setup-1
+#| label: setup
 #| include: false
 library(knitr)
 
@@ -111,7 +111,7 @@ dependence_retention <- read_result("task1_e_dependence_retention.csv")
 
 We estimate the signal dimension of a multivariate time series using the Ladle criterion, which combines lagged dependence with bootstrap subspace stability. Simulations assess the effects of sample size, bootstrap method, and block length, followed by an application to the course dataset.
 
-We use the second-order source separation model
+We use the second-order source separation model adopted for the time-series Ladle estimator [@nordhausen2018ladle]:
 
 $$
 x_t=\mu+\Omega z_t,\qquad E(z_t)=0,\qquad \operatorname{Cov}(z_t)=I_p,
@@ -188,11 +188,11 @@ Independent row resampling destroys the temporal dependence needed for signal id
 
 ### Fixed-Block Bootstrap
 
-Sample $\lceil n/L\rceil$ starting positions uniformly with replacement from $\{1,\ldots,n-L+1\}$. Retain the $L$ consecutive observations from each position, concatenate the blocks, and truncate to $n$ rows. Dependence is preserved within each block.
+Sample $\lceil n/L\rceil$ starting positions uniformly with replacement from $\{1,\ldots,n-L+1\}$. Retain the $L$ consecutive observations from each position, concatenate the blocks, and truncate to $n$ rows. Dependence is preserved within each block [@kunsch1989jackknife].
 
 ### Stationary Bootstrap
 
-The stationary bootstrap begins by sampling a starting index uniformly from $\{1,\ldots,n\}$. At each subsequent position, a new index is sampled uniformly with probability $r=1/L$; otherwise, the previous index is advanced by one, wrapping from $n$ back to 1. The block lengths $K$ therefore follow a geometric distribution:
+The stationary bootstrap begins by sampling a starting index uniformly from $\{1,\ldots,n\}$. At each subsequent position, a new index is sampled uniformly with probability $r=1/L$; otherwise, the previous index is advanced by one, wrapping from $n$ back to 1 [@politis1994stationary]. The block lengths $K$ therefore follow a geometric distribution:
 
 $$
 \Pr(K=k)=r(1-r)^{k-1},\qquad E(K)=\frac{1}{r}=L.
@@ -270,7 +270,7 @@ knitr::include_graphics(file.path(root, "results/figures/task1_bootstrap_acf_err
 
 ## Ladle Estimation Combining Signal Strength and Subspace Stability
 
-The Ladle criterion combines the strength of lagged dependence with the stability of estimated subspaces across bootstrap samples.
+The Ladle criterion combines the strength of lagged dependence with the stability of estimated subspaces across bootstrap samples [@luo2016combining; @nordhausen2018ladle].
 
 ### Signal Strength and the Scree Component $\phi$
 
@@ -290,7 +290,7 @@ $$
 \qquad k=0,\ldots,p-1.
 $$
 
-Larger strengths indicate stronger dependence at the selected lags, whereas noise directions should have strengths close to zero. For multiple lags, we obtain $U$ using `JADE::rjd`, then compute and order the component strengths.
+Larger strengths indicate stronger dependence at the selected lags, whereas noise directions should have strengths close to zero. For multiple lags, we obtain $U$ using `JADE::rjd`, then compute and order the component strengths [@miettinen2017jade].
 
 ### Subspace Instability and the Bootstrap Component $f$
 
@@ -348,7 +348,7 @@ criterion <- data.frame(dimension = 0:(ncol(X) - 1), f, phi, g)
 
 ### Implementation Validation with a Known Dimension
 
-We check the implementation using Setting 1 of Nordhausen and Virta: five Gaussian AR/MA signals and five Gaussian white noise series ($p=10$, $q=5$). With $n=1000$, lags 1–12, $B=100$, and $L=20$, both bootstrap methods recover $\widehat q=5$.
+We check the implementation using Setting 1 of Nordhausen and Virta [@nordhausen2018ladle]: five Gaussian AR/MA signals and five Gaussian white noise series ($p=10$, $q=5$). With $n=1000$, lags 1–12, $B=100$, and $L=20$, both bootstrap methods recover $\widehat q=5$.
 
 Whitening and orthogonality errors are below $4\times10^{-15}$. After joint diagonalization, off-diagonal entries account for about $7.2\%$ of the squared matrix energy, consistent with approximate rather than exact diagonalization.
 
@@ -380,7 +380,7 @@ Innovations are independent across components, and the five noise series are ind
 display_table(processes)
 ```
 
-We use $n\in\{200,500,1000\}$, SOBI lags $\mathcal T=\{1,\ldots,12\}$, and both bootstrap methods with $L\in\{10,20,40\}$ (fixed or expected block length). These settings match the paper; its separate AMUSE comparison is outside our scope.
+We use $n\in\{200,500,1000\}$, SOBI lags $\mathcal T=\{1,\ldots,12\}$, and both bootstrap methods with $L\in\{10,20,40\}$ (fixed or expected block length). These settings follow the paper [@nordhausen2018ladle]; its separate AMUSE comparison is outside our scope.
 
 For each sample size, we generate $R=100$ independent datasets and apply all six method–block length combinations, giving $1800$ fits with $B=100$ bootstrap samples each. This is smaller than the paper's $R=2000$, $B=200$ experiment and targets its qualitative findings at lower computational cost. Here, $R$ controls the precision of recovery rates across datasets; $B$ controls the Monte Carlo approximation within each fit.
 
@@ -490,7 +490,7 @@ Method differences are smaller than sample-size effects. At $n=500$, stationary 
 knitr::include_graphics(file.path(root, "results/figures/task1_d_dimension_distribution.png"))
 ```
 
-The distributions in @fig-de-distribution narrow around $q=5$ as series length increases, consistent with Nordhausen and Virta's qualitative findings. This evidence is limited to Setting 1 with $B=100$; it does not establish consistency or reproduce the full study.
+The distributions in @fig-de-distribution narrow around $q=5$ as series length increases, consistent with Nordhausen and Virta's qualitative findings [@nordhausen2018ladle]. This evidence is limited to Setting 1 with $B=100$; it does not establish consistency or reproduce the full study.
 
 ## Analysis of the Course Dataset: Dimension Estimation and Sensitivity to Block Length
 
