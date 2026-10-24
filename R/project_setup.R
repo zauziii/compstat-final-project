@@ -3,7 +3,7 @@
 # Source this file at the top of either analysis script, then add the
 # task-specific packages with ensure_packages():
 #
-#   source("R/project_setup.R")
+#   source("project_setup.R")
 #   ensure_packages(c("JADE"))      # Task 1
 #   ensure_packages(c("posterior")) # Task 2
 #
@@ -14,9 +14,9 @@
 # ============================================================================
 
 ## ---- 0. project root ------------------------------------------------------
-# The root is the first ancestor directory that contains R/task1.R or
-# R/task2.R, so the same block works for both scripts, whether they are run
-# with Rscript, source(), or from RStudio.
+# Recognise either R/task1.R / R/task2.R or the split Task 1 layout with
+# R/task1_functions.R and data/timeseries.dat. This works with Rscript,
+# source(), and RStudio.
 locate_root <- function() {
   p <- grep("^--file=", commandArgs(), value = TRUE)
   p <- if (length(p))
@@ -43,7 +43,9 @@ locate_root <- function() {
     dirname(normalizePath(p, winslash = "/")), getwd())
   for (d in unique(starts)) {
     repeat {
-      if (any(file.exists(file.path(d, c(
+      if (all(file.exists(file.path(d, c(
+        "R/task1_functions.R", "data/timeseries.dat"
+      )))) || any(file.exists(file.path(d, c(
         "R/task1.R", "R/task2.R"
       )))))
         return(d)
@@ -53,7 +55,7 @@ locate_root <- function() {
       d <- parent
     }
   }
-  stop("Could not find the project root (no R/task1.R or R/task2.R).")
+  stop("Could not find the project root containing the task scripts and data.")
 }
 
 root <- locate_root()
@@ -65,6 +67,12 @@ table_dir  <- "results/tables"  # tables and csv
 figure_dir <- "results/figures" # figures as PNG
 result_dir <- "results"         # RData workspace
 report_dir <- "report"          # rendered report, quarto output
+# The split A--C / D--E analysis keeps generated files under output/.
+if (file.exists(file.path(root, "R", "task1_abc_analysis.R"))) {
+  result_dir <- "output"
+  table_dir <- "output/tables"
+  figure_dir <- "output/figures"
+}
 for (folder in c(data_dir, table_dir, figure_dir, result_dir, report_dir))
   dir.create(folder, recursive = TRUE, showWarnings = FALSE)
 
@@ -103,8 +111,6 @@ PALETTE <- plot_palette
 theme_set(
   theme_pubr(base_size = 11, base_family = "sans") +
     theme(
-      palette.colour.discrete = plot_palette,
-      palette.fill.discrete = plot_palette,
       axis.text = element_text(size = 10, colour = "#202020"),
       axis.title = element_text(size = 11),
       axis.line = element_line(linewidth = .3),
@@ -121,6 +127,12 @@ theme_set(
       plot.margin = margin(8, 8, 8, 8)
     )
 )
+# ggplot2 < 4.0 does not support palette entries in theme(). The analysis
+# scripts also set explicit manual scales so the colours match on either version.
+if (utils::packageVersion("ggplot2") >= "4.0.0") {
+  theme_update(palette.colour.discrete = plot_palette,
+               palette.fill.discrete = plot_palette)
+}
 
 ## ---- 4. PNG export helper ---------------------------------------------------
 # Export at double (183 mm) or single (89 mm) column width, 600 dpi.
