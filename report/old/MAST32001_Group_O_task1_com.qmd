@@ -4,7 +4,7 @@ subtitle: "Final Course Report, Winter Semester 2026"
 author:
   - name: Kaiwei Fu
   - name: Lingyu Wang
-  - name: Sami Sönkä
+  - name: Sami Pönkä
   - name: Zhi Zhou
 date: today
 date-format: "D MMMM YYYY"
@@ -23,20 +23,9 @@ format:
       - bottom=14mm
       - left=12mm
       - right=12mm
-    # Load the same Latin Modern fonts by file name for macOS TeX Live.
-    mainfont: "lmroman10-regular.otf"
-    mainfontoptions:
-      - BoldFont=lmroman10-bold.otf
-      - ItalicFont=lmroman10-italic.otf
-      - BoldItalicFont=lmroman10-bolditalic.otf
-    sansfont: "lmsans10-regular.otf"
-    sansfontoptions:
-      - BoldFont=lmsans10-bold.otf
-      - ItalicFont=lmsans10-oblique.otf
-      - BoldItalicFont=lmsans10-boldoblique.otf
-    monofont: "lmmono10-regular.otf"
-    monofontoptions:
-      - ItalicFont=lmmono10-italic.otf
+    mainfont: "Latin Modern Roman"
+    sansfont: "Latin Modern Sans"
+    monofont: "Latin Modern Mono"
     toc: false
     number-sections: false
     colorlinks: true
@@ -52,7 +41,6 @@ format:
         \usepackage{booktabs}
         \usepackage{caption}
         \usepackage{float}
-        \usepackage{placeins}
         \usepackage{needspace}
         \usepackage{microtype}
         \usepackage{fancyhdr}
@@ -88,6 +76,9 @@ crossref:
   fig-prefix: "Figure"
   tbl-title: "Table"
   tbl-prefix: "Table"
+bibliography: refs2.bib
+reference-section-title: References
+csl: ieee.csl
 ---
 
 ```{r}
@@ -96,7 +87,7 @@ crossref:
 library(knitr)
 
 # This QMD lives in the Task 1 project root (not in report/ as Task 2 does).
-root <- normalizePath(".")
+root <- normalizePath("..")
 read_result <- function(filename) {
   path <- file.path(root, "results", "tables", filename)
   if (!file.exists(path))
@@ -161,6 +152,20 @@ $$
 This estimator uses the full-sample means and averages over the $n-h$ available pairs of observations separated by lag $h$. The matrices used for joint diagonalization are symmetrized as
 $\widehat C_h^{(s)}=(\widehat C_h+\widehat C_h^{\mathsf T})/2$.
 
+```{r}
+#| label: code-task1-preprocessing
+#| echo: true
+#| eval: false
+whitening <- whiten_ts(X)
+Y <- whitening$whitened_data
+colnames(Y) <- paste0("Y", seq_len(ncol(Y)))
+
+S_Y <- stats::cov(Y)
+identity_error <- S_Y - diag(ncol(Y))
+lags <- 1:12
+C_list <- autocov_set(Y, lags = lags, symmetrize = TRUE)
+```
+
 ### Preprocessing Results and Numerical Validation
 
 The supplied dataset contains $n=1000$ observations of $p=10$ variables. After centering and whitening,
@@ -199,6 +204,63 @@ $$
 Conditional on the observed data, the uniform starting index, random restarts, and circular continuation produce a stationary resampling process: its joint distributions are invariant to shifts in time. This property motivates the name stationary bootstrap. Fixed-length block concatenation generally does not preserve stationarity because block boundaries occur at predetermined positions.
 
 Across 100 bootstrap samples, the observed mean block lengths were 9.94, 20.20, and 40.94 for target values of 10, 20, and 40, respectively, close to their intended values.
+
+```{r}
+#| label: code-task1-block-bootstrap
+#| echo: true
+#| eval: false
+# Fixed-block bootstrap
+block_length <- as.integer(block_length)
+
+n_blocks <- ceiling(n / block_length)
+
+block_starts <- sample.int(
+  n - block_length + 1,
+  size = n_blocks,
+  replace = TRUE
+)
+
+indices <- unlist(
+  lapply(
+    block_starts,
+    function(start) {
+      seq.int(
+        from = start,
+        length.out = block_length
+      )
+    }
+  ),
+  use.names = FALSE
+)
+
+indices <- indices[seq_len(n)]
+X_boot <- X[indices, , drop = FALSE]
+
+# Stationary bootstrap
+restart_probability <- 1 / mean_block_length
+indices <- integer(n)
+new_block <- logical(n)
+
+indices[1] <- sample.int(n, size = 1)
+new_block[1] <- TRUE
+
+if (n >= 2) {
+  for (t in 2:n) {
+    if (runif(1) < restart_probability) {
+      indices[t] <- sample.int(n, size = 1)
+      new_block[t] <- TRUE
+    } else {
+      indices[t] <- if (indices[t - 1] == n) {
+        1L
+      } else {
+        indices[t - 1] + 1L
+      }
+    }
+  }
+}
+
+X_boot <- X[indices, , drop = FALSE]
+```
 
 ### Dependence Preservation and Comparison of Block Lengths
 
@@ -290,6 +352,68 @@ $$
 
 As $k$ increases, the scree component decreases, while the bootstrap component tends to rise when unstable noise directions enter the subspace. Minimizing their sum favors a dimension that captures the signal without including unstable directions.
 
+```{r}
+#| label: code-task1-ladle
+#| echo: true
+#| eval: false
+for (b in seq_len(n_boot)) {
+  X_boot <- switch(
+    bootstrap_method,
+    fixed = fixed_block_bootstrap(
+      X,
+      block_length = block_length
+    ),
+    stationary = stationary_bootstrap(
+      X,
+      mean_block_length = block_length
+    )
+  )
+
+  bootstrap_whitening <- whiten_ts(X_boot)
+
+  bootstrap_autocovariances <- autocov_set(
+    bootstrap_whitening$whitened_data,
+    lags = lags,
+    symmetrize = symmetrize
+  )
+
+  bootstrap_decomposition <- sos_decompose(
+    bootstrap_autocovariances
+  )
+
+  U_bootstrap[[b]] <- bootstrap_decomposition$directions
+
+  if (
+    progress &&
+    (b %% max(1, floor(n_boot / 10)) == 0 || b == n_boot)
+  ) {
+    message(
+      "Completed ",
+      b,
+      " of ",
+      n_boot,
+      " bootstrap samples."
+    )
+  }
+}
+
+f_result <- compute_f(
+  U_original,
+  U_bootstrap
+)
+
+f <- f_result$f
+g <- f + phi
+q_hat <- which.min(g) - 1L
+
+criterion <- data.frame(
+  dimension = 0:(ncol(X) - 1),
+  f = f,
+  phi = phi,
+  g = g
+)
+```
+
 ### Implementation Validation with a Known Dimension
 
 We check the implementation using Setting 1 of Nordhausen and Virta: five Gaussian AR/MA signals and five Gaussian white noise series ($p=10$, $q=5$). With $n=1000$, lags 1–12, $B=100$, and $L=20$, both bootstrap methods recover $\widehat q=5$.
@@ -336,6 +460,49 @@ For each dataset, we apply the following steps.
 2. Jointly diagonalize them using `JADE::rjd`, order directions by their strengths, and compute $\phi(k)$.
 3. Generate $B$ multivariate bootstrap samples using fixed blocks or the stationary bootstrap of Politis and Romano. Repeat centering, whitening, autocovariance estimation, diagonalization, and ordering for each sample.
 4. Compare the leading subspaces to compute $f(k)$, then record the dimension minimizing $g(k)=f(k)+\phi(k)$ over $k=0,\ldots,9$.
+
+```{r}
+#| label: code-task1-simulation-worker
+#| echo: true
+#| eval: false
+simulation_worker <- function(job) {
+  size_id <- match(job$sample_size, sample_sizes)
+  data_seed <- master_seed + size_id * 100000L + job$replicate
+  X <- simulate_setting1(job$sample_size, seed = data_seed)
+  rows <- vector("list", length(methods) * length(block_lengths))
+  index <- 0L
+  for (method in methods) {
+    for (block_length in block_lengths) {
+      index <- index + 1L
+      bootstrap_seed <- master_seed + 1000000L + size_id * 1000000L +
+        job$replicate * 10L + index
+      started <- proc.time()[["elapsed"]]
+      answer <- tryCatch({
+        fit <- ladle_fit(X, lags, n_boot = n_boot_simulation,
+                         bootstrap_method = method, block_length = block_length,
+                         seed = bootstrap_seed)
+        checks <- check_fit(fit)
+        list(q_hat = fit$q_hat, error = "", checks = checks,
+             criterion_gap = sort(fit$criterion$g)[2] - min(fit$criterion$g))
+      }, error = function(e) {
+        list(q_hat = NA_integer_, error = conditionMessage(e),
+             checks = c(NA_real_, NA_real_), criterion_gap = NA_real_)
+      })
+      rows[[index]] <- data.frame(
+        sample_size = job$sample_size, replicate = job$replicate,
+        method = method, block_length = block_length, n_boot = n_boot_simulation,
+        data_seed = data_seed, bootstrap_seed = bootstrap_seed,
+        true_dimension = true_dimension, estimated_dimension = answer$q_hat,
+        criterion_gap = answer$criterion_gap,
+        whitening_error = answer$checks[1], orthogonality_error = answer$checks[2],
+        elapsed_seconds = proc.time()[["elapsed"]] - started,
+        error = answer$error, row.names = NULL
+      )
+    }
+  }
+  do.call(rbind, rows)
+}
+```
 
 Short blocks break more lagged observation pairs: a fixed block of length $10$ cannot contain a lag-$12$ pair. Longer blocks preserve more dependence but leave fewer blocks to resample; for $n=200$ and $L=40$, only five fixed blocks are drawn.
 
@@ -473,7 +640,6 @@ The primary fit identifies three latent linear combinations with serial dependen
 
 These directions are not a subset of the original variables, and the remaining components need not be independent, Gaussian, or free of nonlinear dependence. The interpretation assumes approximate stationarity and the second-order source separation model, and depends on the selected lags. Agreement at $L=20$ and $40$ supports three signals, but the unknown true dimension and sensitivity at $L=10$ limit the conclusion.
 
-\FloatBarrier
 
 # Task 2: Bayesian Mixture Models Using MCMC
 

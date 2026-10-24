@@ -1,0 +1,1123 @@
+---
+title: "MAST32001 Computational Statistics"
+subtitle: "Final Course Report, Winter Semester 2026"
+author:
+  - name: Kaiwei Fu
+  - name: Lingyu Wang
+  - name: Sami Pönkä
+  - name: Zhi Zhou
+date: today
+date-format: "D MMMM YYYY"
+lang: en
+engine: knitr
+
+format:
+  pdf:
+    pdf-engine: xelatex
+    documentclass: article
+    papersize: a4
+    fontsize: 11pt
+    linestretch: 1.05
+    geometry:
+      - top=14mm
+      - bottom=14mm
+      - left=12mm
+      - right=12mm
+    mainfont: "lmroman10-regular.otf"
+    mainfontoptions:
+      - BoldFont=lmroman10-bold.otf
+      - ItalicFont=lmroman10-italic.otf
+      - BoldItalicFont=lmroman10-bolditalic.otf
+    sansfont: "lmsans10-regular.otf"
+    sansfontoptions:
+      - BoldFont=lmsans10-bold.otf
+      - ItalicFont=lmsans10-oblique.otf
+      - BoldItalicFont=lmsans10-boldoblique.otf
+    monofont: "lmmono10-regular.otf"
+    monofontoptions:
+      - ItalicFont=lmmono10-italic.otf
+    toc: false
+    number-sections: false
+    colorlinks: true
+    linkcolor: black
+    urlcolor: black
+    citecolor: black
+    fig-dpi: 600
+    fig-cap-location: bottom
+    tbl-cap-location: top
+    keep-tex: false
+    include-in-header:
+      text: |
+        \usepackage{booktabs}
+        \usepackage{caption}
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{microtype}
+        \usepackage{fancyhdr}
+        \captionsetup{font=small,labelfont=bf,labelsep=period,
+          justification=raggedright,singlelinecheck=false}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{0.45em}
+        \setlength{\emergencystretch}{2em}
+        \renewcommand{\arraystretch}{0.9}
+        \setlength{\tabcolsep}{5pt}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \fancyfoot[C]{\small\thepage}
+        \setlength{\footskip}{6mm}
+        \renewcommand{\headrulewidth}{0pt}
+        \renewcommand{\footrulewidth}{0pt}
+        \fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}
+          \renewcommand{\headrulewidth}{0pt}}
+
+execute:
+  echo: false
+  message: false
+  warning: false
+  error: false
+  cache: false
+
+fig-align: center
+fig-pos: H
+tbl-pos: H
+tbl-cap-location: top
+crossref:
+  fig-title: "Figure"
+  fig-prefix: "Figure"
+  tbl-title: "Table"
+  tbl-prefix: "Table"
+bibliography: refs.bib
+reference-section-title: References
+csl: apa.csl
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(knitr)
+
+# This QMD lives in the Task 1 project root (not in report/ as Task 2 does).
+root <- normalizePath("..")
+read_result <- function(filename) {
+  path <- file.path(root, "results", "tables", filename)
+  if (!file.exists(path))
+    stop("Missing results table: ", path,
+         ". Run the Task 1 analysis scripts before rendering the report.")
+  read.csv(path, check.names = FALSE, stringsAsFactors = FALSE)
+}
+fmt <- function(x, digits = 2) formatC(x, format = "f", digits = digits)
+display_table <- function(x, digits = 3) knitr::kable(x, format = "pipe",
+  digits = digits, row.names = FALSE, escape = FALSE)
+method_name <- function(x) ifelse(x == "fixed", "Fixed-block", "Stationary")
+
+# Render from saved results; no simulations or bootstrap fits run during rendering.
+dependence_summary <- read_result("task1_bootstrap_dependence_summary.csv")
+processes <- read_result("task1_setting1_processes.csv")
+simulation_summary <- read_result("task1_d_simulation_summary.csv")
+dependence_retention <- read_result("task1_e_dependence_retention.csv")
+```
+
+# Task 1: Ladle Estimation of Signal Dimension Using Time Series Bootstrap Methods
+
+We estimate the signal dimension of a multivariate time series using the Ladle criterion, which combines lagged dependence with bootstrap subspace stability. Simulations assess the effects of sample size, bootstrap method, and block length, followed by an application to the course dataset.
+
+We use the second-order source separation model adopted for the time-series Ladle estimator [@nordhausen2018ladle]:
+
+$$
+x_t=\mu+\Omega z_t,\qquad E(z_t)=0,\qquad \operatorname{Cov}(z_t)=I_p,
+$$
+
+where $\Omega$ is a nonsingular mixing matrix and $z_t$ contains weakly stationary latent components. The first $q$ components are mutually independent signals with second-order serial dependence; the remaining $p-q$ components are white noise and independent of the signals. The signal dimension $q$ is therefore the number of latent signal components, rather than a count of observed variables. To identify all $q$ signals through lagged covariances, the selected lag set must include at least one lag with nonzero autocovariance for each signal.
+
+## Data Preprocessing and Characterization of Lagged Dependence
+
+Whitening gives the data an identity sample covariance matrix. Under a second-order source separation model, it transforms the mixing matrix into an orthogonal matrix, allowing signal directions to be estimated by orthogonal joint diagonalization. Lagged dependence remains and provides the information needed to identify these directions.
+
+### Whitening Transformation and Autocovariance Estimation
+
+Observations are stored as rows of an $n\times p$ matrix $X$. Each variable is centered using its full-sample column mean:
+
+$$
+X_c=X-\mathbf{1}_n\bar{x}^{\mathsf T},
+\qquad
+S_0=\frac{1}{n-1}X_c^{\mathsf T}X_c.
+$$
+
+If $S_0=VDV^{\mathsf T}$, the symmetric whitening matrix and the whitened data are
+
+$$
+W=S_0^{-1/2}=VD^{-1/2}V^{\mathsf T},
+\qquad Y=X_cW.
+$$
+
+To avoid unstable inverse square roots, whitening is stopped with an error if any eigenvalue is at most $10^{-10}$ times the largest eigenvalue, indicating a singular or nearly singular covariance matrix. The whitening matrix already accounts for differences in scale.
+
+For lag $h\geq1$, we estimate
+
+$$
+\widehat C_h
+=\frac{1}{n-h}\sum_{t=1}^{n-h}y_ty_{t+h}^{\mathsf T}.
+$$
+
+This estimator uses the full-sample means and averages over the $n-h$ available pairs of observations separated by lag $h$. The matrices used for joint diagonalization are symmetrized as
+$\widehat C_h^{(s)}=(\widehat C_h+\widehat C_h^{\mathsf T})/2$.
+
+```{r}
+#| label: code-task1-preprocessing
+#| echo: true
+#| eval: false
+whitening <- whiten_ts(X)
+Y <- whitening$whitened_data
+colnames(Y) <- paste0("Y", seq_len(ncol(Y)))
+identity_error <- stats::cov(Y) - diag(ncol(Y))
+C_list <- autocov_set(Y, lags = 1:12, symmetrize = TRUE)
+```
+
+### Preprocessing Results and Numerical Validation
+
+The supplied dataset contains $n=1000$ observations of $p=10$ variables. After centering and whitening,
+
+$$
+\max_j|\bar y_j|=6.49\times10^{-14},\qquad
+\max_{j,k}\left|\left\{\widehat{\operatorname{Cov}}(Y)-I_{10}\right\}_{jk}\right|
+=3.55\times10^{-15}.
+$$
+
+The sample means are zero and the sample covariance is the identity up to numerical precision. Lagged covariances remain nonzero, with Frobenius norms of $0.365$ and $0.558$ at lags 1 and 2.
+
+```{r}
+#| label: fig-task1-whitening
+#| out-width: "75%"
+#| fig-cap: "Contemporaneous correlation matrix before whitening (left) and covariance matrix after whitening (right). Colors indicate matrix entries; the identity pattern on the right confirms unit variances and negligible cross-covariances."
+knitr::include_graphics(file.path(root, "results/figures/task1_whitening_covariance.png"))
+```
+
+## Bootstrap Resampling That Preserves Temporal Dependence
+
+Independent row resampling destroys the temporal dependence needed for signal identification. We instead resample blocks of consecutive observations, preserving local temporal dependence and keeping all variables together within each observation.
+
+### Fixed-Block Bootstrap
+
+Sample $\lceil n/L\rceil$ starting positions uniformly with replacement from $\{1,\ldots,n-L+1\}$. Retain the $L$ consecutive observations from each position, concatenate the blocks, and truncate to $n$ rows. Dependence is preserved within each block [@kunsch1989jackknife].
+
+### Stationary Bootstrap
+
+The stationary bootstrap begins by sampling a starting index uniformly from $\{1,\ldots,n\}$. At each subsequent position, a new index is sampled uniformly with probability $r=1/L$; otherwise, the previous index is advanced by one, wrapping from $n$ back to 1 [@politis1994stationary]. The block lengths $K$ therefore follow a geometric distribution:
+
+$$
+\Pr(K=k)=r(1-r)^{k-1},\qquad E(K)=\frac{1}{r}=L.
+$$
+
+Conditional on the observed data, the uniform starting index, random restarts, and circular continuation produce a stationary resampling process: its joint distributions are invariant to shifts in time. This property motivates the name stationary bootstrap. Fixed-length block concatenation generally does not preserve stationarity because block boundaries occur at predetermined positions.
+
+Across 100 bootstrap samples, the observed mean block lengths were 9.94, 20.20, and 40.94 for target values of 10, 20, and 40, respectively, close to their intended values.
+
+```{r}
+#| label: code-task1-block-bootstrap
+#| echo: true
+#| eval: false
+# Fixed-block bootstrap (input checks and optional diagnostics omitted)
+block_length <- as.integer(block_length)
+n_blocks <- ceiling(n / block_length)
+block_starts <- sample.int(n - block_length + 1, n_blocks, replace = TRUE)
+indices <- unlist(lapply(block_starts, function(start) {
+  seq.int(from = start, length.out = block_length)
+}), use.names = FALSE)
+indices <- indices[seq_len(n)]
+X_boot <- X[indices, , drop = FALSE]
+
+# Stationary bootstrap (input checks and return_indices output omitted)
+restart_probability <- 1 / mean_block_length
+indices <- integer(n); indices[1] <- sample.int(n, size = 1)
+if (n >= 2) {
+  for (t in 2:n) {
+    if (runif(1) < restart_probability) indices[t] <- sample.int(n, size = 1)
+    else indices[t] <- if (indices[t - 1] == n) 1L else indices[t - 1] + 1L
+  }
+}
+X_boot <- X[indices, , drop = FALSE]
+```
+
+### Dependence Preservation and Comparison of Block Lengths
+
+We compare preservation of the sample autocorrelation function (ACF), using independent and identically distributed (IID) resampling as a reference. @fig-task1-acf-comparison shows one representative variable.
+
+```{r}
+#| label: fig-task1-acf-comparison
+#| out-width: "75%"
+#| fig-cap: "Sample ACFs for the variable with the largest absolute lag-1 autocorrelation: original data and one sample from each bootstrap method. Both block methods use $L=20$; IID resampling largely removes the lagged dependence."
+knitr::include_graphics(file.path(root, "results/figures/task1_bootstrap_acf_comparison.png"))
+```
+
+Dependence preservation is assessed using the mean absolute difference between the autocorrelations of the original and bootstrap samples, averaged over all 10 variables and lags 1–20. Each row in @tbl-task1-acf-error summarizes 100 bootstrap samples.
+
+```{r}
+#| label: tbl-task1-acf-error
+#| tbl-cap: "Mean absolute ACF error; smaller values indicate better preservation of local dependence."
+method_order <- c("iid", paste0("fixed (L=", c(10, 20, 40), ")"),
+                  paste0("stationary (L=", c(10, 20, 40), ")"))
+acf_table <- dependence_summary[match(method_order, dependence_summary$method),
+                                 c("method", "mean_error", "standard_deviation")]
+acf_table$method <- sub("^iid$", "IID resampling", acf_table$method)
+acf_table$method <- sub("^fixed", "Fixed-block", acf_table$method)
+acf_table$method <- sub("^stationary", "Stationary", acf_table$method)
+names(acf_table) <- c("Method", "Mean error", "Standard deviation")
+display_table(acf_table, digits = 4)
+```
+
+IID resampling produces the largest mean error. Longer blocks reproduce the observed ACF more closely, although the errors are slightly more variable at $L=40$. Increasing block length preserves longer stretches of dependence but reduces the number of blocks resampled.
+
+```{r}
+#| label: fig-task1-acf-error
+#| out-width: "75%"
+#| fig-cap: "Boxplots of mean absolute ACF error across 100 bootstrap samples per setting, averaged over 10 variables and lags 1\u201320. Lower values indicate better preservation of the original ACFs."
+knitr::include_graphics(file.path(root, "results/figures/task1_bootstrap_acf_error.png"))
+```
+
+## Ladle Estimation Combining Signal Strength and Subspace Stability
+
+The Ladle criterion combines the strength of lagged dependence with the stability of estimated subspaces across bootstrap samples [@luo2016combining; @nordhausen2018ladle].
+
+### Signal Strength and the Scree Component $\phi$
+
+For a set of lags $\mathcal T$, an orthogonal matrix $U$ is used to approximately jointly diagonalize the autocovariance matrices of the whitened data. Component strengths are defined as
+
+$$
+s_j=\sum_{h\in\mathcal T}
+\left[
+\operatorname{diag}\!\left(U^{\mathsf T}\widehat C_h^{(s)}U\right)_j
+\right]^2,
+$$
+
+and ordered as $s_0\geq\cdots\geq s_{p-1}$. The normalized scree component is
+
+$$
+\phi(k)=\frac{s_k}{1+\sum_{\ell=0}^{p-1}s_\ell},
+\qquad k=0,\ldots,p-1.
+$$
+
+Larger strengths indicate stronger dependence at the selected lags, whereas noise directions should have strengths close to zero. For multiple lags, we obtain $U$ using `JADE::rjd`, then compute and order the component strengths [@miettinen2017jade].
+
+### Subspace Instability and the Bootstrap Component $f$
+
+Let $\widehat B_k$ and $B^*_{k,b}$ contain the first $k$ ordered directions from the original sample and the $b$th bootstrap sample, respectively. Subspace instability is measured by
+
+$$
+f_0(k)=\frac{1}{B}\sum_{b=1}^{B}
+\left\{1-\left|\det\!\left(\widehat B_k^{\mathsf T}B^*_{k,b}\right)\right|\right\},
+\quad k=1,\ldots,p-1,
+\qquad f_0(0)=0,
+$$
+
+and normalized as
+
+$$
+f(k)=\frac{f_0(k)}{1+\sum_{\ell=0}^{p-1}f_0(\ell)}.
+$$
+
+The absolute determinant measures agreement between the two $k$-dimensional subspaces and is invariant to sign changes in individual directions. A stable signal subspace has a small $f(k)$; including noise directions tends to increase subspace instability.
+
+### Combined Criterion and Dimension Estimation
+
+The Ladle criterion combines these two sources of information:
+
+$$
+g(k)=f(k)+\phi(k),\qquad
+\widehat q=\underset{k\in\{0,\ldots,p-1\}}{\arg\min}\;g(k).
+$$
+
+As $k$ increases, the scree component decreases, while the bootstrap component tends to rise when unstable noise directions enter the subspace. Minimizing their sum favors a dimension that captures the signal without including unstable directions.
+
+```{r}
+#| label: code-task1-ladle
+#| echo: true
+#| eval: false
+# Original-sample whitening, autocovariances, and SOS decomposition omitted
+for (b in seq_len(n_boot)) {
+  X_boot <- switch(bootstrap_method,
+    fixed = fixed_block_bootstrap(X, block_length = block_length),
+    stationary = stationary_bootstrap(X, mean_block_length = block_length))
+  bootstrap_whitening <- whiten_ts(X_boot)
+  bootstrap_autocovariances <- autocov_set(bootstrap_whitening$whitened_data, lags,
+                                           symmetrize = symmetrize)
+  bootstrap_decomposition <- sos_decompose(bootstrap_autocovariances)
+  U_bootstrap[[b]] <- bootstrap_decomposition$directions
+  # Progress-message code omitted
+}
+f_result <- compute_f(U_original, U_bootstrap)
+f <- f_result$f; g <- f + phi; q_hat <- which.min(g) - 1L
+criterion <- data.frame(dimension = 0:(ncol(X) - 1), f, phi, g)
+# Remaining diagnostics and returned fit object omitted
+```
+
+### Implementation Validation with a Known Dimension
+
+We check the implementation using Setting 1 of Nordhausen and Virta [@nordhausen2018ladle]: five Gaussian AR/MA signals and five Gaussian white noise series ($p=10$, $q=5$). With $n=1000$, lags 1–12, $B=100$, and $L=20$, both bootstrap methods recover $\widehat q=5$.
+
+Whitening and orthogonality errors are below $4\times10^{-15}$. After joint diagonalization, off-diagonal entries account for about $7.2\%$ of the squared matrix energy, consistent with approximate rather than exact diagonalization.
+
+```{r}
+#| label: fig-task1-ladle
+#| out-width: "75%"
+#| fig-cap: "Ladle curves for one Setting 1 dataset: bootstrap instability $f(k)$, scree component $\\phi(k)$, and their sum $g(k)$. Both methods minimize $g(k)$ at the true dimension $q=5$ ($n=1000$, $B=100$, $L=20$)."
+knitr::include_graphics(file.path(root, "results/figures/task1_ladle_criterion.png"))
+```
+
+## Simulation Study: Signal Dimension Recovery
+
+### Data-Generating Model and Experimental Design
+
+We use Setting 1 of Nordhausen and Virta, with $p=10$ components and a true signal dimension of $q=5$. The mixing matrix is the identity, so $x_t=z_t$, where the first five components are mutually independent Gaussian AR/MA processes and the remaining five are mutually independent Gaussian white noise series. The signal parameters are listed in @tbl-de-processes, using the following convention:
+
+$$
+z_{j,t}=\sum_{\ell=1}^{r_j}a_{j,\ell}z_{j,t-\ell}
+      +\varepsilon_{j,t}
+      +\sum_{\ell=1}^{s_j}b_{j,\ell}\varepsilon_{j,t-\ell},
+\qquad \varepsilon_{j,t}\overset{\mathrm{iid}}{\sim}N(0,1).
+$$
+
+Innovations are independent across components, and the five noise series are independent $N(0,1)$ white noise. Each data column is centered and scaled to unit sample variance before whitening, as in the implementation check.
+
+```{r}
+#| label: tbl-de-processes
+#| tbl-cap: "Signal processes in Setting 1. A dash indicates the absence of the corresponding AR or MA part."
+display_table(processes)
+```
+
+We use $n\in\{200,500,1000\}$, SOBI lags $\mathcal T=\{1,\ldots,12\}$, and both bootstrap methods with $L\in\{10,20,40\}$ (fixed or expected block length). These settings follow the paper [@nordhausen2018ladle]; its separate AMUSE comparison is outside our scope.
+
+For each sample size, we generate $R=100$ independent datasets and apply all six method–block length combinations, giving $1800$ fits with $B=100$ bootstrap samples each. This is smaller than the paper's $R=2000$, $B=200$ experiment and targets its qualitative findings at lower computational cost. Here, $R$ controls the precision of recovery rates across datasets; $B$ controls the Monte Carlo approximation within each fit.
+
+### Computational Procedure and Choice of Tuning Parameters
+
+For each dataset, we apply the following steps.
+
+1. Center and whiten the data, then compute symmetrized autocovariances at lags 1–12.
+2. Jointly diagonalize them using `JADE::rjd`, order directions by their strengths, and compute $\phi(k)$.
+3. Generate $B$ multivariate bootstrap samples using fixed blocks or the stationary bootstrap of Politis and Romano. Repeat centering, whitening, autocovariance estimation, diagonalization, and ordering for each sample.
+4. Compare the leading subspaces to compute $f(k)$, then record the dimension minimizing $g(k)=f(k)+\phi(k)$ over $k=0,\ldots,9$.
+
+```{r}
+#| label: code-task1-simulation-worker
+#| echo: true
+#| eval: false
+simulation_worker <- function(job) {
+  size_id <- match(job$sample_size, sample_sizes)
+  data_seed <- master_seed + size_id * 100000L + job$replicate
+  X <- simulate_setting1(job$sample_size, seed = data_seed)
+  rows <- vector("list", length(methods) * length(block_lengths)); index <- 0L
+  for (method in methods) for (block_length in block_lengths) {
+    index <- index + 1L
+    bootstrap_seed <- master_seed + 1000000L + size_id * 1000000L +
+      job$replicate * 10L + index
+    answer <- tryCatch({
+      fit <- ladle_fit(X, lags, n_boot = n_boot_simulation,
+                       bootstrap_method = method, block_length = block_length,
+                       seed = bootstrap_seed)
+      checks <- check_fit(fit)
+      list(q_hat = fit$q_hat, error = "", checks = checks,
+           criterion_gap = sort(fit$criterion$g)[2] - min(fit$criterion$g))
+    }, error = function(e) list(q_hat = NA_integer_, error = conditionMessage(e),
+                                checks = c(NA_real_, NA_real_), criterion_gap = NA_real_))
+    # Seed, timing, numerical-check, and error columns are also saved
+    rows[[index]] <- data.frame(sample_size = job$sample_size,
+                                replicate = job$replicate, method, block_length,
+                                true_dimension, estimated_dimension = answer$q_hat,
+                                criterion_gap = answer$criterion_gap)
+  }
+  do.call(rbind, rows)
+}
+```
+
+Short blocks break more lagged observation pairs: a fixed block of length $10$ cannot contain a lag-$12$ pair. Longer blocks preserve more dependence but leave fewer blocks to resample; for $n=200$ and $L=40$, only five fixed blocks are drawn.
+
+Data generation and bootstrap fitting use separate random seeds. Shared datasets allow paired comparisons across settings. After some preliminary runs reached the $1000$-iteration limit, we increased it to $10000$, keeping the joint diagonalization tolerance at $10^{-6}$. All $1800$ fits completed, with whitening and orthogonality errors below $3\times10^{-14}$ and $9\times10^{-15}$, respectively.
+
+### Evaluation Metrics and Monte Carlo Error
+
+For a fixed sample size, method, and block length, let $I_r=\mathbf 1\{\widehat q_r=5\}$. The estimated probability of correct selection and its Monte Carlo standard error are
+
+$$
+\widehat P=\frac{1}{R}\sum_{r=1}^{R}I_r,
+\qquad
+\widehat{\operatorname{MCSE}}(\widehat P)
+=\sqrt{\frac{\widehat P(1-\widehat P)}{R}}.
+$$
+
+With $R=100$, the MCSE is at most $0.05$. We report $95\%$ Wilson intervals, including at observed rates of $0$ or $1$, and dimension distributions to distinguish underestimation from overestimation.
+
+\Needspace{12\baselineskip}
+
+### Effect of Sample Size on Dimension Recovery
+
+```{r}
+#| label: tbl-de-recovery
+#| tbl-cap: "Percentage of replications selecting the true dimension $q=5$. Each value is based on $100$ independent datasets, with $B=100$ bootstrap samples per fit."
+recovery_table <- reshape(
+  simulation_summary[, c("method", "block_length", "sample_size", "correct_rate")],
+  idvar = c("method", "block_length"), timevar = "sample_size", direction = "wide")
+recovery_table <- recovery_table[order(recovery_table$method, recovery_table$block_length), ]
+size_columns <- paste0("correct_rate.", sort(unique(simulation_summary$sample_size)))
+recovery_table <- recovery_table[, c("method", "block_length", size_columns)]
+recovery_table[size_columns] <- 100 * recovery_table[size_columns]
+recovery_table$method <- method_name(recovery_table$method)
+names(recovery_table) <- c("Method", "$L$",
+                           paste0("$n=", sort(unique(simulation_summary$sample_size)), "$"))
+display_table(recovery_table, digits = 0)
+```
+
+@tbl-de-recovery and @fig-de-recovery show that sample size has the most pronounced effect. When $n=200$, only $0$–$1\%$ of replications select the correct dimension. Both underestimation and overestimation are common, occurring in $58$–$77\%$ and $22$–$42\%$ of replications, respectively. When $n=500$, recovery rates increase to $34$–$45\%$, with most remaining errors due to underestimation. When $n=1000$, every setting selects $q=5$ in $99$ replications and $q=4$ in one replication. The corresponding $95\%$ Wilson interval is $[94.6\%,99.8\%]$, consistent with a high recovery rate at this sample size.
+
+```{r}
+#| label: fig-de-recovery
+#| out-width: "90%"
+#| fig-cap: "Estimated probability of selecting $q=5$ from 100 simulated datasets per sample size. Panels correspond to block lengths; blue circles and green triangles denote fixed-block and stationary bootstrap results. Error bars are $95\\%$ Wilson intervals."
+knitr::include_graphics(file.path(root, "results/figures/task1_d_recovery_probability.png"))
+```
+
+### Bootstrap Method, Block Length, and the Distribution of Estimation Errors
+
+Method differences are smaller than sample-size effects. At $n=500$, stationary minus fixed-block recovery rates are $-2$, $3$, and $7$ percentage points for $L=10,20,40$, with paired MCSEs of $3.5$, $3.3$, and $3.8$ points. The MCSEs use within-dataset differences $I_{r,S}-I_{r,F}$ to account for pairing. These results do not establish a clear advantage for either method; at $n=1000$, all settings give identical selections.
+
+```{r}
+#| label: fig-de-distribution
+#| out-width: "75%"
+#| fig-cap: "Stacked proportions of estimated dimensions across 100 Setting 1 datasets per sample size. F and S denote fixed-block and stationary bootstrap methods; numbers indicate $L$. Light blue represents the true dimension $q=5$."
+knitr::include_graphics(file.path(root, "results/figures/task1_d_dimension_distribution.png"))
+```
+
+The distributions in @fig-de-distribution narrow around $q=5$ as series length increases, consistent with Nordhausen and Virta's qualitative findings [@nordhausen2018ladle]. This evidence is limited to Setting 1 with $B=100$; it does not establish consistency or reproduce the full study.
+
+## Analysis of the Course Dataset: Dimension Estimation and Sensitivity to Block Length
+
+### Analysis Settings and Stability Assessment
+
+We analyze `timeseries.dat` ($n=1000$, $p=10$) using the same preprocessing, lags 1–12, and Ladle procedure as in the simulations. Both bootstrap methods use $L=10,20,40$. The primary choice, $L=20$, accommodates all selected lags within a block and yields $50$ fixed blocks; $L=10$ and $40$ assess block-length sensitivity.
+
+Each setting uses $B=500$ bootstrap samples and five independent random seeds. The resulting $30$ fits assess Monte Carlo stability for this dataset, not sampling uncertainty. We examine the criterion curves, selected dimensions, and gaps between the two lowest values of $g$.
+
+### Results Supporting a Three-Dimensional Signal Subspace
+
+At $L=20$ and $40$, both methods select $\widehat q=3$ in all five runs. At $L=10$, fixed blocks always select $2$, while stationary blocks select $2$ four times and $3$ once. The latter setting has a minimum criterion gap of about $0.0007$, indicating a near tie in at least one run. Thus, the three-dimensional estimate is stable with longer blocks but sensitive to short blocks.
+
+For the primary fixed-block fit with $L=20$ and the first seed,
+
+$$
+f(3)=0.04660,\qquad \phi(3)=0.01649,\qquad g(3)=0.06310.
+$$
+
+The next-best candidate is $k=2$, whose criterion value exceeds the minimum by $0.01278$. The first four ordered component strengths are approximately $0.400$, $0.345$, $0.141$, and $0.034$. The drop after the third direction supports a three-dimensional signal subspace, while the bootstrap term penalizes the instability introduced by additional weak directions.
+
+```{r}
+#| label: fig-de-components
+#| out-width: "75%"
+#| fig-cap: "Ladle components under the six settings for the course dataset, using the first seed for each setting. Vertical lines indicate the dimensions minimizing the criterion. Under the definition above, $\\phi(k)$ corresponds to the strength of the $(k+1)$th direction."
+knitr::include_graphics(file.path(root, "results/figures/task1_e_ladle_components.png"))
+```
+
+In @fig-de-components, $\phi$ depends only on the original sample and is unchanged across settings. Differences in selection arise from the bootstrap component $f$.
+
+### Sensitivity to Block Length and Its Explanation Through Dependence Structure
+
+```{r}
+#| label: fig-de-sensitivity
+#| out-width: "75%"
+#| fig-cap: "Total criterion $g(k)$ by block length for fixed-block (left) and stationary (right) bootstrap. Colors distinguish $L=10,20,40$; light curves show five individual seed runs and thick curves their means. Dimensions are selected separately for each run."
+knitr::include_graphics(file.path(root, "results/figures/task1_e_block_sensitivity.png"))
+```
+
+To explain the competition between $k=2$ and $3$ in @fig-de-sensitivity, we examine the ordered components
+
+$$
+\widehat Z=(X-\mathbf 1_n\bar x^{\mathsf T})\widehat W\widehat U.
+$$
+
+For the third component, the largest absolute sample autocorrelation over lags $1$–$12$ occurs at $h=8$, where the autocorrelation is approximately $0.287$. Dependence at this lag may be poorly preserved by short blocks.
+
+For fixed blocks, ignoring endpoint effects in a finite series, the proportion of lag-$h$ observation pairs lying within the same block is approximately $\max(1-h/L,0)$. For stationary blocks, the probability of proceeding for $h$ consecutive steps without restarting is $(1-1/L)^h$. At $h=8$, these quantities are
+
+```{r}
+#| label: tbl-de-retention
+#| tbl-cap: "Within-block retention at the dominant lag of the last selected signal component."
+retention_table <- data.frame(
+  Quantity = c("Fixed-block: within-block pair proportion", "Stationary: probability of no restart"),
+  check.names = FALSE)
+for (i in order(dependence_retention$block_length)) {
+  retention_table[[paste0("$L=", dependence_retention$block_length[i], "$")]] <- c(
+    dependence_retention$fixed_approximate_within_block_fraction[i],
+    dependence_retention$stationary_no_restart_probability[i])
+}
+display_table(retention_table, digits = 3)
+```
+
+These are measures of preserved ordering, not exact ACF attenuation factors or recovery probabilities. They suggest that short blocks weaken the dependence supporting the third direction, making its estimated subspace less stable. The more distinct minimum at $k=3$ with longer blocks is consistent with this explanation.
+
+```{r}
+#| label: fig-de-acf
+#| out-width: "75%"
+#| fig-cap: "Sample ACFs of the ordered components. The first three directions, identified as signals by the primary fit, are shown in blue. The dashed lines at $\\pm1.96/\\sqrt{1000}$ are descriptive white noise reference bands, not simultaneous confidence bounds that account for estimation of the directions."
+knitr::include_graphics(file.path(root, "results/figures/task1_e_component_acf.png"))
+```
+
+### Interpretation and Scope of the Results
+
+The primary fit identifies three latent linear combinations with serial dependence, whose ACFs show pronounced features at lags $2$, $5$, and $8$, respectively (@fig-de-acf). The remaining seven directions have weaker dependence at the selected lags.
+
+These directions are not a subset of the original variables, and the remaining components need not be independent, Gaussian, or free of nonlinear dependence. The interpretation assumes approximate stationarity and the second-order source separation model, and depends on the selected lags. Agreement at $L=20$ and $40$ supports three signals, but the unknown true dimension and sensitivity at $L=10$ limit the conclusion.
+
+# Task 2: Bayesian mixture modelling with MCMC
+
+```{r}
+#| label: setup-2
+#| include: false
+library(knitr)
+
+# Root of the project (parent of the report/ directory).
+root <- normalizePath("..")
+
+# Load every number and table produced by R/task2.R, so that
+# this report is guaranteed to match the analysis script output.
+if (!file.exists(file.path(root, "results/task2_sim.RData")))
+  stop("Run R/task2.R first: it creates results/task2_sim.RData.")
+load(file.path(root, "results/task2_sim.RData"))
+
+fmt <- function(x, digits = 2) formatC(x, format = "f", digits = digits)
+interval <- function(lo, hi, digits = 2) paste0("[", fmt(lo, digits), ", ", fmt(hi, digits), "]")
+display_table <- function(x, digits = 3) knitr::kable(x, format = "pipe",
+  digits = digits, row.names = FALSE, escape = FALSE)
+ratio_equal <- ppc_f$summary[3, , drop = FALSE]
+ppc_counts <- vapply(seq_along(ppc_f$obs), function(j)
+  sum(ppc_f$rep_draws[[j]] >= ppc_f$obs[j]), integer(1))
+n_rep <- nrow(ppc_f$rep_draws)
+filtered <- !startsWith(tab_ov_relabel_critique$Scheme, "All ordered draws")
+removed_pct <- 100 - unique(tab_ov_relabel_critique$Retained_pct[filtered])
+```
+
+## Part A: Latent-variable representation and the Gibbs sampler
+
+### Model specification and priors
+
+A two-component mixture describes observations that cluster around two different locations. What we observe is the measurement, not its component label. Introducing the missing label turns one strange likelihood into familiar normal and binomial pieces. For independent observations $y_1, \dots, y_n$, let $Z_i \in \{1,2\}$ be the latent allocation, with $\Pr(Z_i=1)=\pi$ and $\Pr(Z_i=2)=1-\pi$. Conditional on its allocation, $$
+Y_i \mid Z_i 
+=
+k,\mu_1,\mu_2,\sigma^2 
+\sim \mathcal{N}(\mu_k, \sigma^2),
+\qquad
+k=1,2.
+$$
+
+Integrating out $Z_i$ gives the familiar mixture density: $$
+p(y_i \mid \mu_1,\mu_2,\pi,\sigma^2)
+=
+\pi\varphi(y_i;\mu_1,\sigma^2)+(1-\pi)\varphi(y_i;\mu_2,\sigma^2),
+$$
+
+This is a two-component normal mixture with a shared variance. The observations are independent given the mixutre parameters.
+
+We use the independent, proper priors $$
+\mu_1,\mu_2 \stackrel{\text{iid}}{\sim}
+\mathcal{N}(m_0,s_0^2),\qquad
+\pi \sim \text{Beta}(a, b),\qquad
+\sigma^2 \sim \text{InvGamma}(\alpha_0,\beta_0),
+$$
+
+with $m_0=0, s_0=10, a=b=1, \text{and}\ \alpha_0=2, \beta=1$. The weight prior is `Beta(1,1)`, which is the uniform prior. The mean prior is broad relative to these data, but it remains important when a component contains few observations. The two mean priors are indentical and the weight prior is symmetric, so the model treats the two labels symmetrically. The variance prior has mean 1 and infinite variance. Thse choice keep every update conjugate.
+
+Our inverse-gamma convention is $$
+p(v) \propto v^{-\alpha_0 -1}\exp(-\beta_0/v),
+\qquad v>0,
+$$
+
+so $1/v$ is gamma with shape $\alpha_0$ and rate $\beta_0$. This convention fixed the rate used in the `R` sampler.
+
+To derive the updates, let $n_k = \sum_i I(Z_i=k)$ and $S_k=\sum_{i:Z_i=k}y_i$. Given the allocations, each observation contributes to only one normal component. The likelihood is $$L(\theta,z;y) \propto
+\pi^{n_1}(1-\pi)^{n_2}(\sigma^2)^{-n/2}
+exp\left[
+-\frac{1}{2\sigma^2}\sum\limits_{i}(y_i-\mu_{z_i})^2
+\right].
+$$
+
+Multiplying by the independent priors gives $p(\theta,z\mid y) \propto L(\theta,z;y)p(\mu_1)p(\mu_2)p(\pi)p(\sigma^2)$. This is the basis of the four conditional updates. Each update keeps only the terms involving its own unknown.
+
+### Full conditional distribution
+
+The complete-data form lets us update one block at a time. Each distribution below conditions on the current values of the other unknown.
+
+**Allocations.** Given the current parameters, Bayes' rule gives the probability that observation $i$ belongs to component 1: $$
+\Pr(Z_i=1 \mid y_i,\theta)
+=
+\frac{
+\pi\varphi(y_i;\mu_1,\sigma^2)
+}{
+\pi\varphi(y_i;\mu_1,\sigma^2) + 
+(1-\pi)\varphi(y_i;\mu_2,\sigma^2)
+}=
+p_i
+$$
+
+We sample $I(Z_i=1) \sim \text{Bernoulli}(p_i)$ independently across observations. To avoid numerical underflow, it first calculates $$
+\ell_{i1}=
+\log\pi+\log\varphi(y_i;\mu_1,\sigma^2),\quad
+\ell_{i2}=
+\log(1-\pi)+\log\varphi(y_i;\mu_2,\sigma^2),
+$$
+
+then uses $p_i=\text{logit}^{-1}(\ell_{i1} - \ell_{i2})$.
+
+**Component means.** Once observations have been allocated, each component has a normal likelihood. For $k=1,2$, combing it with the mean prior gives $$
+p(\mu_k \mid -)
+\propto
+exp\left[
+-\frac{(\mu_k-m_0)^2}{2s_0^2}
+-\frac{1}{2\sigma^2}
+\sum \limits_{i:Z_i=k}(y_i-\mu_k)^2
+\right].
+$$
+
+Completing the square gives $$
+V_k=\left(s_0^{-2}+\frac{n_k}{\sigma^2}\right)^{-1},\quad
+M_k=V_k\left(\frac{m_0}{s_0^2}+\frac{S_k}{\sigma^2}\right),\quad
+\mu_k \mid - \sim \mathcal{N}(M_k,V_k).
+$$
+
+If $n_k=0$, then $S_k=0$ and the update reduces to the prior. We will use this fact later, because it explains the large mean excursions in the overlap run.
+
+**Mixing proportion (Weight).** The sampled counts contribute $\pi^{n_1}(1-\pi)^{n_2}$ to the likelihood. Combining this with the beta prior gives
+
+$$
+\pi \mid -
+\sim
+\text{Beta}(a+n_1,b+n_2).
+$$
+
+**Variance.** Finally, pool the residuals from both components as $\text{SSE}=\sum_i(y_i-\mu_{Z_i})^2$. Combining likelihood and prior gives $$
+p(\sigma^2 \mid -)
+\propto
+(\sigma^2)^{-(\alpha_0+n/2)-1}
+exp\left[
+-\frac{\beta_0+\text{SSE}/2}{\sigma^2}
+\right],
+$$ and hence $$
+\sigma^2 \mid -
+\sim
+\text{InvGamma}(\alpha_0+\frac{n}{2}, \beta_0+\frac{\text{SSE}}{2}).
+$$ The mean prior do not involve $\sigma^2$, so they add no extra term to this conditional shape.
+
+### R implementation
+
+Our own `rgibbs_mix()` in `R/task2.R` updates labels, both means, mixing proportion and variance in that order, using the latest values. This excerpt shows numerical steps from the full function:
+
+```{r}
+#| label: gibbs-code
+#| echo: true
+#| eval: false
+# 1. Allocations
+log1 <- log(pi_c) + dnorm(y, mu1_c, sqrt(s2_c), log = TRUE)
+log2 <- log1p(-pi_c) + dnorm(y, mu2_c, sqrt(s2_c), log = TRUE)
+p1 <- plogis(log1 - log2); zi <- rbinom(n, 1, p1)
+n1 <- sum(zi == 1); n2 <- n - n1
+# 2. Component means
+ybar1 <- if (n1 > 0) mean(y[zi == 1]) else 0
+ybar2 <- if (n2 > 0) mean(y[zi == 0]) else 0
+prec1 <- 1 / s0^2 + n1 / s2_c; prec2 <- 1 / s0^2 + n2 / s2_c
+mu1_c <- rnorm(1, (m0 / s0^2 + n1 * ybar1 / s2_c) / prec1, sqrt(1 / prec1))
+mu2_c <- rnorm(1, (m0 / s0^2 + n2 * ybar2 / s2_c) / prec2, sqrt(1 / prec2))
+# 3. Mixing proportion
+pi_c <- rbeta(1, a + n1, b + n2)
+# 4. Variance: mean priors are independent N(m0,s0^2). I
+resid <- sum(ifelse(zi == 1, (y - mu1_c)^2, (y - mu2_c)^2))
+s2_c <- 1 / rgamma(1, shape = alpha0 + n / 2, rate = beta0 + resid / 2)
+```
+
+Log densities prevent numerical underflow. The reciprocal-gamma step uses our chosen rate and residuals from the newly drawn means. The function checks that inputs and states are finite, the variance is positive and the mixing proportion lies strictly between 0 and 1.
+
+We save all parameter draws and $n_1$, keeping both the full paths and the draws after burn-in. These give the posterior summaries, traces, switch counts and allocation probabilities. Two fixed start differ in mean positions, labels, mixing proportions and variances. We give overlap more iterations because it mixes slowly, then use traces, chain agreement, $\hat R$ and ESS to assess the run lengths in `Part B`.
+
+## Part B: Simulation study and computational behavior
+
+### Simulation design
+
+We first generate data from a known mixture, so we can compare the posterior with the values that produced the sample. Each setting has $n=500$, $\pi=0.5$, and $\sigma^2=1$, The separated has means $(-2,2)$ and the overlap setting has means $(-0.5,0.5)$. 
+
+We use data seed and the same latent labels in both settings, with new normal draws for the observations. Keeping the sample size, weights, variances and priors the same help us focus on the effect of overlap. There is one sample per setting, so this checks the sampler on these examples rather than measuring bias or coverage across repeated samples.
+
+Each dataset is fitted from two different starts. The `swap` stat puts the means in the reverse order and the `spread` start places them farther apart. Both simulated settings use the same starts in @tbl-inits. These are the sampler's starting guesses. They do not change the true means used generated the data. The Faithful rows are included for the later analysis in `Part D`.
+
+```{r}
+#| label: tbl-inits
+#| tbl-cap: "Initial values and seeds for the two chains in each setting. The last two rows are the Old Faithful chains analysed in Part D."
+init_tab <- initial_values[, c("Setting", "Chain", "Seed", "mu1", "mu2", "pi", "s2")]
+kable(init_tab, digits = 3, row.names = FALSE)
+```
+
+```{r}
+#| label: sim-code
+#| echo: true
+#| eval: false
+# Two settings: clearly separated vs substantially overlapping components
+n <- 500; set.seed(20261016); z_true <- rbinom(n, 1, 0.5)
+y_sep <- ifelse(z_true == 1, rnorm(n, -2, 1), rnorm(n, 2, 1))      # mu = +/- 2
+y_ov  <- ifelse(z_true == 1, rnorm(n, -0.5, 1), rnorm(n, 0.5, 1))  # mu = +/- 0.5
+
+# Two chains from deliberately different starting values
+inits <- list(
+  swap   = list(mu1 = 2, mu2 = -2, pi = 0.9, s2 = 1),  # swapped labels
+  spread = list(mu1 = -4, mu2 = 4, pi = 0.5, s2 = 4)    # spread means
+)
+run_chains <- function(y, inits, n_iter = 5000, burn = 1000, seed_base = 100) {
+  ans <- lapply(seq_along(inits), function(i) {
+    message("Chain ", i, ": ", names(inits)[i])
+    rgibbs_mix(y, n_iter = n_iter, burn = burn, init = inits[[i]], seed = seed_base + i)
+  })
+  setNames(ans, names(inits))
+}
+message("Separated simulation")
+chains_sep <- run_chains(y_sep, inits, n_iter = 20000, burn = 5000, seed_base = 100)
+message("Overlapping simulation")
+chains_ov  <- run_chains(y_ov, inits, n_iter = 60000, burn = 15000, seed_base = 200)
+```
+
+### Recovery of the data-generating mixture
+
+To compare draws with the truth, we first name the lower-mean component consistently. Whenever $\mu_{(1)} < \mu_{(2)}$, we exchange the means and replace $\pi$ with $1-\pi$. The common variance stays unchanged. @tbl-recovery combines both chains after this transformation.
+
+```{r}
+#| label: relabel-code
+#| echo: true
+#| eval: false
+# Relabel by ordering the means: mu(1) < mu(2); flip pi accordingly
+relabel_chain <- function(ch) {
+  s <- ch$samples; flip <- s$mu1 > s$mu2
+  data.frame(mu_lo = pmin(s$mu1, s$mu2), mu_hi = pmax(s$mu1, s$mu2),
+             pi_lo = ifelse(flip, 1 - s$pi, s$pi), s2 = s$s2,
+             n_lo = ifelse(flip, ch$n - s$n1, s$n1))
+}
+pool_relabeled <- function(chains) do.call(rbind, lapply(chains, function(ch)
+  relabel_chain(ch)[, c("mu_lo", "mu_hi", "pi_lo", "s2")]))
+```
+
+```{r}
+#| label: tbl-recovery
+#| tbl-cap: "Parameter recovery: posterior medians and central 95% credible intervals, using all retained ordered draws."
+recover <- rbind(cbind(Setting = "Separated", tab_sep), cbind(Setting = "Overlap", tab_ov))
+display_table(data.frame(Setting = recover$Setting, Parameter = recover$Parameter,
+  Truth = recover$Truth, Median = round(recover$Median, 2),
+  `95% interval` = interval(recover$lo, recover$hi), check.names = FALSE))
+```
+
+The separated estimates are close to their generating values. Under overlap, the means and weight are much less precisely identified: the upper-mean median is `r fmt(tab_ov$Median[2])`, compared with the true value 0.5, and the weight interval spans `r interval(tab_ov$lo[3], tab_ov$hi[3])`. Interval coverage in this one sample does not establish accurate parameter recovery. The main finding is that two weakly separated components can describe the data without having individually well-determined parameters.
+
+### Trace plots and convergence diagnostics
+
+The raw means in @fig-trace tell us why starting values and labels need attention. Under separation the chains stay in opposite labels. Under overlap, the ordering changes often and the means sometimes travel far from the data. An almost empty component can also produce a large excursion, so a large jump alone does not identify a label switch. `Part C` examines this more clearly.
+
+```{r}
+#| label: fig-trace
+#| out-width: "75%"
+#| fig-cap: "Raw mean traces for teh separated (a) and overlap (b). Colors distinguish the means; solid and dashed lines distinguish the two starts.Overlap shows label changes and large excursions when a component is nearly empty."
+knitr::include_graphics(file.path(root, "results/figures/task2_simulation_raw_traces.png"))
+```
+
+We then compare the chains after relabeling, so their component names agree. Rank-normalized split $\hat R$ checks agreement across chains, while bulk and tail ESS describe how much information remains after accounting for dependence between draws [@vehtari2021]. We use $\hat R \leq 1.01$ and both ESS measures at least 400 for every ordered parameter as a practical screen.
+
+```{r}
+#| label: tbl-diagnostics
+#| tbl-cap: "Computational behaviour across settings. Run lengths are per chain, diagnostics combine both ordered chains, and sampler time is summed over the two chains."
+settings <- c("Separated", "Overlap", "Faithful")
+sampling <- initial_values[match(settings, initial_values$Setting), ]
+screen <- screen_tab[match(settings, screen_tab$Setting), ]
+overview <- data.frame(Metric = c(
+  "Iterations per chain", "Burn-in per chain", "Retained draws per chain",
+  "Maximum ordered Rhat", "Minimum bulk ESS", "Minimum tail ESS",
+  "Sampler time (seconds)", "Ambiguous allocations (%)"
+), check.names = FALSE)
+for (j in seq_along(settings)) {
+  nm <- settings[j]
+  overview[[nm]] <- c(
+    fmt(sampling$Iterations[j], 0),
+    fmt(sampling$Burn[j], 0),
+    fmt(sampling$Iterations[j] - sampling$Burn[j], 0),
+    fmt(screen$Rhat_max[j], 4),
+    fmt(screen$ESS_min[j], 0),
+    fmt(screen$ESS_tail_min[j], 0),
+    fmt(sum(initial_values$Sampler_seconds[initial_values$Setting == nm]), 2),
+    fmt(100 * allocation_summary$Ambiguous_fraction[
+      match(nm, allocation_summary$Setting)], 2)
+  )
+}
+display_table(overview)
+```
+
+Both simulated setting pass this screen. Even with the longer run, overlap gives fewer effective draws and takes more sampler time. The extra iterations help control Monte Carlo error, but they do not remove uncertainty about the mixture itself. Passing the screen supports these summaries. It does not guarantee that every posterior region has been explored. Full parameter-level diagnostics and MCSEs remain in the saved CSV files. Recorded times depends on the machine used.
+
+### Agreement across starts
+
+@tbl-chains compares the starts. Their ordered medians are close. Switches count changes in the sign of $\mu_1-\mu_2$ between successive retained draws.
+
+```{r}
+#| label: tbl-chains
+#| tbl-cap: "Per-chain posterior medians after relabeling (order restriction $\\mu_{(1)} < \\mu_{(2)}$) and label-switch counts."
+chain_tab <- label_tab[, c("Setting", "Chain", "Ordered_mu_lo", "Ordered_mu_hi",
+                           "Ordered_pi_lo", "Switches")]
+names(chain_tab) <- c("Setting", "Chain", "mu_lo median", "mu_hi median",
+                      "pi_lo median", "Switches")
+kable(chain_tab, digits = 3, row.names = FALSE)
+```
+
+### Fitted densities and allocation uncertainty
+
+Next, @fig-density averages the fitted mixture density over posterior draws. The overall fit stays close to the generating curve, even when individual component parameters are uncertain.
+
+```{r}
+#| label: fig-density
+#| out-width: "75%"
+#| fig-cap: "Simulated data with the fitted posterior predictive density (solid) and the true generating density (dashed): separated (a) and overlap (b)."
+knitr::include_graphics(file.path(root, "results/figures/task2_simulation_density.png"))
+```
+
+@fig-allocations averages each observation's conditional probability of belonging to the lower-mean component over both chain. Values near 0 or 1 show clear allocations. We call $0.2<p_i<0.8$ ambiguous. These descriptive cutoffs define the fraction in @tbl-diagnostics.
+
+```{r}
+#| label: fig-allocations
+#| out-width: "75%"
+#| fig-cap: "Lower-component allocation probabilities: separated (a), overlap (b), Faithful (c)."
+knitr::include_graphics(file.path(root, "results/figures/task2_allocation_probabilities.png"))
+```
+
+Separation gives clear parameter and memberships. With overlap, a close overall fit leaves both uncertain. `Part C` examines how label switching affects the component summaries.
+
+## Part C: Label switching and identifiability
+
+### The symmetry of the likelihood
+
+Part B showed label switching happening in practice. Here we look at why it happens and what can be done about it. The reason is a symmetry of the model. The mixture density is invariant under permutation of the component labels:
+
+$$p(y_i \mid \mu_1,\mu_2,\sigma^2,\pi) = p(y_i \mid \mu_2,\mu_1,\sigma^2,1-\pi),$$
+
+The same invariance holds for the posterior, because the prior is symmetric in $\mu_1$ and $\mu_2$. The parameter vector $(\mu_1,\mu_2,\pi)$ is then identifiable only up to this permutation. The posterior has two equivalent modes. A chain that can cross the low-probability region between them alternates between the two. Label switching is a feature of the model itself, not an artefact of our implementation.
+
+### Identifiability restrictions and post-processing
+
+Two remedies are available. The first is a constrained prior, for example $\mu_1<\mu_2$ a priori. It makes the model identifiable by construction, but it changes the target posterior and complicates the sampler. The second, which we use here, is to run the sampler unconstrained and relabel the draws afterwards. We use the order restriction $\mu_{(1)}<\mu_{(2)}$. At each iteration we assign the smaller and the larger of $(\mu_1,\mu_2)$ to the two components and flip $\pi$ accordingly ($\pi\mapsto1-\pi$ when $\mu_1>\mu_2$).
+
+Here the two mean priors and the $\mathrm{Beta}(1,1)$ weight prior are symmetric. With the same priors and proper normalisation, imposing $\mu_1<\mu_2$ gives the same ordered posterior as sorting unconstrained draws. It fixes the component names, but does not make overlapping components easier to distinguish [@stephens2000; @papastamoulis2016].
+
+```{r}
+#| label: tbl-label-summary
+#| tbl-cap: "Component-mean posterior medians before and after relabelling, by chain. All retained draws are used."
+t <- label_tab
+display_table(data.frame(Setting = t$Setting, Chain = t$Chain,
+  `Raw mu1` = round(t$Raw_mu1, 2), `Raw mu2` = round(t$Raw_mu2, 2),
+  `Ordered low` = round(t$Ordered_mu_lo, 2),
+  `Ordered high` = round(t$Ordered_mu_hi, 2), check.names = FALSE))
+```
+
+```{r}
+#| label: fig-ordered
+#| out-width: "75%"
+#| fig-cap: "Order-restricted traces (two chains, one colour per chain) for the separated and the overlapping settings. After relabeling by $\\mu_{(1)} < \\mu_{(2)}$, the switching disappears and the chains converge to a common, interpretable parameterization; the overlapping chains still mix more slowly than the separated ones."
+knitr::include_graphics(file.path(root, "results/figures/task2_simulation_ordered_traces.png"))
+```
+
+### Critique of simple order restrictions ($\mu_{(1)}<\mu_{(2)}$)
+
+```{r}
+#| label: tbl-occ-setup
+#| include: false
+occ <- data.frame(
+  Setting = c("Separated", "Overlap", "Faithful"),
+  empty = sapply(list(chains_sep, chains_ov, chains_f), function(chs)
+    100 * mean(vapply(chs, function(ch) { n1 <- ch$samples$n1; mean(n1 == 0 | n1 == ch$n) }, numeric(1)))),
+  extreme = sapply(list(chains_sep, chains_ov, chains_f), function(chs)
+    100 * mean(vapply(chs, function(ch) { pi <- ch$samples$pi; mean(pi < 0.01 | pi > 0.99) }, numeric(1))))
+)
+names(occ) <- c("Setting", "Empty-component draws (%)", "Extreme weight draws (%)")
+```
+
+
+While post-processing with $\mu_{\mathrm{lo}}=\min(\mu_1,\mu_2)$ and $\mu_{\mathrm{hi}}=\max(\mu_1,\mu_2)$ resolves label assignment, it introduces two distinct artifacts under heavy component overlap:
+
+1. **Order-statistic truncation (repulsion bias):** Because marginal posterior distributions overlap across zero, folding the parameter space across $\mu_1=\mu_2$ truncates the tails, artificially repelling posterior medians away from each other ($E[\min(\mu_1,\mu_2)]\le\min(E[\mu_1],E[\mu_2])$).
+
+2. **Prior tails from empty components.** In `r fmt(100 * occ$Empty_component_fraction[occ$Setting == "Overlap"], 2)`% of overlapping sweeps, an empty component ($n_k=0$) causes $\mu_k$ to update directly from the diffuse prior $N(0,10^2)$.  The order statistic systematically channels extreme negative prior draws into $\mu_{\mathrm{lo}}$ and positive draws into $\mu_{\mathrm{hi}}$, generating skewed credible intervals (`r interval(tab_ov$lo[1], tab_ov$hi[1])` and `r interval(tab_ov$lo[2], tab_ov$hi[2])`). Conditioning on non-empty occupancy ($\min(n_1,n_2)\ge5$) successfully eliminates these prior-tail excursions.
+
+The inequality above concerns expectations, so it does not by itself establish bias in posterior medians. Ordering defines the lower and upper component means. The occupancy threshold removes empty and very small components, but does not guarantee that every extreme draw disappears. It also changes the target to $p(\theta\mid y,\min(n_1,n_2)\ge5)$, so we use it as a sensitivity analysis and keep all ordered draws for the main results.
+
+The joint draws in @fig-joint show the empty-component excursions. Only the plotted points are thinned.
+
+```{r}
+#| label: fig-joint
+#| out-width: "75%"
+#| fig-cap: "Joint raw mean draws for separated and overlapping components. Crosses identify sweeps with an empty component; each panel uses its own axis scales."
+knitr::include_graphics(file.path(root, "results/figures/task2_joint_posterior_mu1_mu2.png"))
+```
+
+```{r}
+#| label: tbl-occ
+#| tbl-cap: "Fraction of retained sweeps with an empty component or an extreme mixing weight."
+kable(occ, digits = 2, row.names = FALSE)
+```
+
+The current overlap run retains `r fmt(100 - removed_pct, 2)`% of draws under the occupancy rule and removes `r fmt(removed_pct, 2)`%. @tbl-occupancy-sensitivity shows how the summaries change.
+
+We use the following filter to check how small component counts affect the posterior summaries.
+
+```{r}
+#| label: code-c-occupancy
+#| echo: true
+#| eval: false
+ord_all <- do.call(rbind, lapply(chains_ov, relabel_chain))
+n_obs <- chains_ov[[1]]$n
+min_occ <- 5
+keep <- ord_all$n_lo >= min_occ &
+  (n_obs - ord_all$n_lo) >= min_occ
+ord_sub <- ord_all[keep, , drop = FALSE]
+```
+
+```{r}
+#| label: tbl-occupancy-sensitivity
+#| tbl-cap: "Overlap: all ordered draws and occupancy-conditioned draws."
+t <- tab_ov_relabel_critique
+display_table(data.frame(Scheme = ifelse(startsWith(t$Scheme, "All ordered draws"), "All", "Conditional"),
+  Parameter = t$Parameter, `Retained (%)` = round(t$Retained_pct, 2),
+  Median = round(t$Median, 2), `95% interval` = interval(t$lo, t$hi), check.names = FALSE))
+```
+
+### Additional label-invariant summaries
+
+The predictive density, common variance, mixture mean $m=\pi\mu_1+(1-\pi)\mu_2$, mixture variance $v=\sigma^2+\pi(1-\pi)(\mu_1-\mu_2)^2$ and separation $|\mu_1-\mu_2|$ do not change when labels are exchanged. @tbl-invariant uses the raw common-variance draws. A probability of belonging to the raw component 1 does change with labels; ordering or a label-invariant clustering summary is needed for allocation inference.
+
+```{r}
+#| label: tbl-invariant
+#| tbl-cap: "Label-invariant common-variance posterior summaries. Separation is the absolute difference between component means."
+t <- subset(invariant_tab, Quantity != "s2")
+display_table(data.frame(Setting = t$Setting, Quantity = c(mixture_mean = "Mixture mean", mixture_variance = "Mixture variance",
+    separation = "Mean separation")[t$Quantity],
+  Median = round(t$Median, 2), `95% interval` = interval(t$lo, t$hi), check.names = FALSE))
+```
+
+## Part D: Application to the Old Faithful geyser data
+
+```{r}
+#| label: tbl-faithful-0
+#| include: false
+d <- subset(diag_detailed, Setting == "Faithful")
+```
+
+
+So far everything has been simulated. To see whether the sampler works in practice, we fitted the two-component mixture to the eruption durations of the Old Faithful geyser ($n=272$, from the `datasets` package) [@rcore2024]. The data are strongly bimodal. They correspond to short and long eruption regimes, and we analyse them on the original scale in minutes. We run two chains from setting-adapted starting values. One start swaps the labels and uses the 20% and 80% quantiles of the durations. The other spreads the means beyond the observed range. Each chain runs for 20,000 iterations with 5,000 burn-in.
+
+The posterior places the two components at `r fmt(tab_f$Median[1])` and `r fmt(tab_f$Median[2])` minutes. The proportion of short eruptions is `r fmt(tab_f$Median[3])`, and the residual standard deviation is `r fmt(sqrt(tab_f$Median[4]))` minutes. This agrees well with the known two-regime structure of the geyser. On the original scale the components are well separated. The chains never switch labels (`r sum(label_tab$Switches[label_tab$Setting == "Faithful"])` switches), and the minimum bulk ESS is `r format(round(min(d$ESS)), big.mark = ",", trim = TRUE)`. The posterior summaries are reliable.
+
+@tbl-faithful adds convergence diagnostics to the common-variance summaries. The Faithful panel in @fig-allocations has only 1 of 272 durations with a lower-component probability between 0.2 and 0.8. This supports clear membership under the fitted model. The eruption durations are from the R `datasets` package [@rcore2024].
+
+```{r}
+#| label: tbl-faithful
+#| tbl-cap: "Faithful: common-variance summaries and diagnostics from both ordered chains. MCSE is for the posterior mean."
+d <- subset(diag_detailed, Setting == "Faithful")
+display_table(data.frame(Parameter = tab_f$Parameter, Median = round(tab_f$Median, 3),
+  `95% interval` = interval(tab_f$lo, tab_f$hi, 3), Rhat = fmt(d$Rhat, 4),
+  `Bulk ESS` = round(d$ESS), `Tail ESS` = round(d$ESS_tail), MCSE = fmt(d$MCSE, 4),
+  check.names = FALSE))
+```
+
+```{r}
+#| label: fig-faithful-traces
+#| out-width: 75%
+#| fig-cap: "Faithful common-variance ordered traces. The two starts give stable, closely agreeing trajectories."
+knitr::include_graphics(file.path(root, "results/figures/task2_faithful_ordered_traces.png"))
+```
+
+### Posterior predictive check and heteroscedastic extension
+
+Visual inspection of the fitted density indicates a localized discrepancy: the observed short-duration peak is sharper and taller than the fitted lower component, which is broader and lower in that region. The common-variance assumption $\sigma_1^2=\sigma_2^2$ forces a compromise between tightly clustered short eruptions and more dispersed long eruptions.
+
+To evaluate this quantitatively, we conduct a posterior predictive check [@gelman1996]. Using regime-specific dispersion statistics ($T_{\mathrm{ratio}}=\mathrm{SD}_{\mathrm{long}}/\mathrm{SD}_{\mathrm{short}}$), the observed spread ratio is `r fmt(ratio_equal$Observed, 3)` ($\mathrm{SD}_{\mathrm{short}}=$ `r fmt(ppc_f$summary$Observed[1], 3)`, $\mathrm{SD}_{\mathrm{long}}=$ `r fmt(ppc_f$summary$Observed[2], 3)`). Across replicated datasets generated under the shared-variance model, the posterior predictive $p$-value is $p_B<0.001$, confirming the inadequacy of the homoscedastic assumption.
+
+Extending the model to allow component-specific variances $(\sigma_1^2 \neq \sigma_2^2)$ via independent Inverse-Gamma updates yields $\sigma_{\mathrm{short}}\approx$ `r fmt(median(sqrt(rl_f_unequal$s2_lo)), 3)` minutes and $\sigma_{\mathrm{long}}\approx$ `r fmt(median(sqrt(rl_f_unequal$s2_hi)), 3)` minutes. This heteroscedastic formulation captures the sharp short-eruption peak while avoiding likelihood degeneracy.
+
+### Additional checks for the current saved results
+
+For the predictive check, the observed and each of the `r n_rep` replicated datasets are split at 3 minutes. The two SDs describe duration groups, rather than the latent component SDs. The current run has `r ppc_counts[3]`/`r n_rep` replicated ratios at least as large as the observed ratio. This supports the spread discrepancy described above; the zero count is a finite-simulation estimate, not proof of a zero tail probability.
+
+The following code defines the SD ratio and calculates how often the replicated ratio is at least as large as the observed one.
+
+```{r}
+#| label: code-d-ppc
+#| echo: true
+#| eval: false
+split_val <- 3
+calc_stats <- function(y_vec) {
+  s_short <- sd(y_vec[y_vec < split_val])
+  s_long <- sd(y_vec[y_vec >= split_val])
+  c(sd_short = s_short, sd_long = s_long,
+    sd_ratio = s_long / s_short)
+}
+tail_count <- sum(rep_df$sd_ratio >= obs_stats["sd_ratio"])
+p_B <- tail_count / nrow(rep_df)
+```
+
+```{r}
+#| label: tbl-ppc-equal
+#| tbl-cap: "Common-variance posterior predictive checks. Tail counts give replications at least as large as the observed statistic."
+t <- ppc_f$summary
+display_table(data.frame(Statistic = t$Statistic, Observed = round(t$Observed, 3),
+  `Rep. median` = round(t$Rep_Median, 3),
+  `Rep. 95% interval` = interval(t$Rep_lo, t$Rep_hi, 3),
+  `Tail count` = paste0(ppc_counts, "/", n_rep), check.names = FALSE))
+```
+
+The original discussion quotes SDs of 0.295 and 0.412 minutes. The current saved output gives posterior SD medians of `r fmt(median(sqrt(rl_f_unequal$s2_lo)), 3)` and `r fmt(median(sqrt(rl_f_unequal$s2_hi)), 3)` minutes. The following tables and density overlay use the current saved output. Allowing different variances does not itself remove likelihood degeneracy; the proper inverse-gamma priors penalise variances approaching zero.
+
+The unequal-variance model keeps the same mean and weight priors and uses independent $\mathrm{InvGamma}(2,1)$ variance priors. Allocations and mean updates use each component's variance. When ordering the means, each variance moves with its component. Its variance update is
+
+$$
+\sigma_k^2\mid-\sim\mathrm{InvGamma}\left(2+\frac{n_k}{2},\;1+\frac12\sum_{i:Z_i=k}(y_i-\mu_k)^2\right),\qquad k=1,2.
+$$
+
+Each component variance is updated using its own observation count and residual sum of squares.
+
+```{r}
+#| label: code-d-variance
+#| echo: true
+#| eval: false
+s2_1_c <- 1 / rgamma(1, shape = alpha0 + n1 / 2, rate = beta0 + sse1 / 2)
+s2_2_c <- 1 / rgamma(1, shape = alpha0 + n2 / 2, rate = beta0 + sse2 / 2)
+```
+
+```{r}
+#| label: tbl-faithful-unequal
+#| tbl-cap: "Faithful unequal-variance posterior summaries from both ordered chains."
+display_table(data.frame(Parameter = tab_f_unequal$Parameter,
+  Median = round(tab_f_unequal$Median, 3),
+  `95% interval` = interval(tab_f_unequal$lo, tab_f_unequal$hi, 3),
+  check.names = FALSE))
+```
+
+```{r}
+#| label: fig-model-comparison
+#| out-width: "75%"
+#| fig-cap: "Observed Faithful durations with posterior predictive densities under equal and unequal component variances."
+knitr::include_graphics(file.path(root, "results/figures/task2_faithful_equal_vs_unequal_density.png"))
+```
+
+The two fits place the means close together. Allowing different variances sharpens the short-duration peak and broadens the long-duration component.
+
+```{r}
+#| label: tbl-model-comparison
+#| tbl-cap: "Posterior medians under the two variance specifications. Means and SDs are in minutes; the weight refers to the short-duration component."
+comparison <- data.frame(
+  Parameter = c("Mean (short)", "Mean (long)", "Weight (short)",
+                "SD (short)", "SD (long)"),
+  `Equal variance` = c(tab_f$Median[1:3], rep(median(sqrt(rl_f$s2)), 2)),
+  `Unequal variance` = c(tab_f_unequal$Median[1:3],
+    median(sqrt(rl_f_unequal$s2_lo)), median(sqrt(rl_f_unequal$s2_hi))),
+  check.names = FALSE)
+display_table(comparison, digits = 3)
+```
+
+Separate convergence diagnostics and predictive replications for the extension are not included in the current script. The reported predictive check evaluates the common-variance model. The overlay shows a more flexible fit, but does not by itself establish model adequacy or verify physical eruption mechanisms.
+
+## Conclusions
+
+Our Gibbs sampler successfully recovers parameters in both separated and overlapping regimes, and while label switching and empty components require careful post-processing and diagnostic screening, the Bayesian mixture framework provides a robust description of bimodal geophysical processes. However, one sample per setting cannot establish repeated-sampling bias or coverage, two starts cannot guarantee that every mode is explored, sorting does not cure weak identification, occupancy conditioning changes the target, the 3-minute duration split is a chosen model-checking statistic, and because the extension changes the variance-prior structure, the density overlay alone does not establish overall model adequacy.
