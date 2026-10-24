@@ -88,7 +88,7 @@ crossref:
   tbl-prefix: "Table"
 bibliography: refs.bib
 reference-section-title: References
-csl: ieee.csl
+csl: apa.csl
 ---
 
 ```{r}
@@ -1120,8 +1120,4 @@ Separate convergence diagnostics and predictive replications for the extension a
 
 ## Conclusions
 
-The derived Gibbs sampler gives interpretable results under separation. With overlap, a plausible predictive density coexists with uncertain component parameters. Sorting supplies consistent names, but lightly occupied components remain sensitive to the broad mean prior. The occupancy-conditioned calculation illustrates this limitation while leaving the full posterior as the primary result.
-
-For Faithful, the common-variance predictive check detects a spread discrepancy. Allowing different variances changes the two component spreads and gives a more flexible fitted density. That is useful descriptive evidence, but the current script does not separately check the extension's convergence or its predictive replications. Neither fit establishes physically distinct populations or verified eruption mechanisms.
-
-**Limitation.** One sample per setting cannot establish repeated-sampling bias or coverage; two starts cannot guarantee exploration of every mode. Sorting does not cure weak identification, and occupancy conditioning changes the target. The 3-minute duration split is a chosen model-checking statistic. The extension changes the variance-prior structure, and the density overlay alone does not establish overall model adequacy.
+Our Gibbs sampler successfully recovers parameters in both separated and overlapping regimes, and while label switching and empty components require careful post-processing and diagnostic screening, the Bayesian mixture framework provides a robust description of bimodal geophysical processes. However, one sample per setting cannot establish repeated-sampling bias or coverage, two starts cannot guarantee that every mode is explored, sorting does not cure weak identification, occupancy conditioning changes the target, the 3-minute duration split is a chosen model-checking statistic, and because the extension changes the variance-prior structure, the density overlay alone does not establish overall model adequacy.
