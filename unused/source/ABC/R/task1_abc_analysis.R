@@ -35,7 +35,7 @@ find_project_root <- function() {
 }
 
 project_root <- find_project_root()
-source(file.path(project_root, "project_setup.R"))
+source(file.path(project_root, "R","project_setup.R"))
 source(file.path(project_root, "R", "task1_functions.R"))
 
 data_dir <- file.path(project_root, "output", "data")

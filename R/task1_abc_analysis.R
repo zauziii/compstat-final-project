@@ -35,6 +35,7 @@ find_project_root <- function() {
 }
 
 project_root <- find_project_root()
+source(file.path(project_root, "R","project_setup.R"))
 source(file.path(project_root, "R", "task1_functions.R"))
 
 data_dir <- file.path(project_root, "output", "data")
@@ -165,47 +166,25 @@ write_task1_csv(
   "task1_autocovariance_summary.csv"
 )
 
-plot_matrix <- function(M, main, limits = range(M)) {
-  p <- nrow(M)
-  palette <- grDevices::colorRampPalette(
-    c("#2C7BB6", "#FFFFBF", "#D7191C")
-  )(101)
-
-  graphics::image(
-    x = seq_len(p),
-    y = seq_len(p),
-    z = M,
-    zlim = limits,
-    col = palette,
-    axes = FALSE,
-    xlab = "Variable",
-    ylab = "Variable",
-    main = main
-  )
-  graphics::axis(1, at = seq_len(p), labels = seq_len(p))
-  graphics::axis(2, at = seq_len(p), labels = seq_len(p))
-  graphics::box()
+# Use the shared publication theme, palette and 600 dpi PNG exporter.
+matrix_data <- function(M, panel) {
+  grid <- expand.grid(row = seq_len(nrow(M)), column = seq_len(ncol(M)))
+  transform(grid, value = as.vector(M), panel = panel)
 }
-
-grDevices::png(
-  file.path(figure_dir, "task1_whitening_covariance.png"),
-  width = 9,
-  height = 4.5,
-  units = "in",
-  res = 300
+covariance_plot_data <- rbind(
+  matrix_data(stats::cor(X), "Original sample correlation"),
+  matrix_data(S_Y, "Whitened sample covariance")
 )
-graphics::par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
-plot_matrix(
-  stats::cor(X),
-  "Original sample correlation",
-  limits = c(-1, 1)
-)
-plot_matrix(
-  S_Y,
-  "Whitened sample covariance",
-  limits = c(-1, 1)
-)
-grDevices::dev.off()
+covariance_plot <- ggplot(covariance_plot_data, aes(row, column, fill = value)) +
+  geom_tile() +
+  facet_wrap(~panel, nrow = 1) +
+  scale_fill_gradient2(low = plot_palette[1], mid = "white",
+                       high = plot_palette[2], midpoint = 0, limits = c(-1, 1),
+                       oob = scales::squish, name = "Value") +
+  scale_x_continuous(breaks = seq_len(ncol(X)), expand = c(0, 0)) +
+  scale_y_continuous(breaks = seq_len(ncol(X)), expand = c(0, 0)) +
+  coord_equal() + labs(x = "Variable", y = "Variable")
+save_sci(covariance_plot, "task1_whitening_covariance", "double", height_mm = 100)
 
 # Part B: bootstrap methods and preservation of local dependence
 # ----------------------------------------------------------------
@@ -380,35 +359,21 @@ acf_comparison <- cbind(
   stationary = acf_vector(stationary_example[, representative_variable], 20)
 )
 
-grDevices::png(
-  file.path(figure_dir, "task1_bootstrap_acf_comparison.png"),
-  width = 7,
-  height = 4.5,
-  units = "in",
-  res = 300
-)
-graphics::matplot(
-  acf_lags,
-  acf_comparison,
-  type = "o",
-  pch = c(16, 1, 2, 5),
-  lty = c(1, 2, 3, 4),
-  col = c("black", "#D7191C", "#2C7BB6", "#1A9641"),
-  xlab = "Lag",
-  ylab = "Sample autocorrelation",
-  main = paste0("Local dependence for variable X", representative_variable)
-)
-graphics::abline(h = 0, col = "grey75")
-graphics::legend(
-  "topright",
-  legend = c("Original", "iid", "Fixed L=20", "Stationary E[L]=20"),
-  col = c("black", "#D7191C", "#2C7BB6", "#1A9641"),
-  pch = c(16, 1, 2, 5),
-  lty = c(1, 2, 3, 4),
-  bty = "n",
-  cex = 0.85
-)
-grDevices::dev.off()
+acf_plot_data <- data.frame(lag = acf_lags, acf_comparison, check.names = FALSE) |>
+  tidyr::pivot_longer(-lag, names_to = "method", values_to = "acf")
+acf_plot_data$method <- factor(acf_plot_data$method,
+                               levels = c("original", "iid", "fixed", "stationary"))
+acf_labels <- c("Original", "iid", "Fixed L=20", "Stationary E[L]=20")
+acf_plot <- ggplot(acf_plot_data, aes(lag, acf, colour = method,
+                                      shape = method, linetype = method)) +
+  geom_hline(yintercept = 0, colour = "grey75", linewidth = 0.3) +
+  geom_line(linewidth = 0.5) + geom_point(size = 1.6) +
+  scale_colour_manual(values = c("#000000", plot_palette[c(2, 1, 3)]), labels = acf_labels) +
+  scale_shape_manual(values = c(16, 1, 2, 5), labels = acf_labels) +
+  scale_linetype_manual(values = c(1, 2, 3, 4), labels = acf_labels) +
+  labs(x = "Lag", y = "Sample autocorrelation", colour = NULL, shape = NULL,
+       linetype = NULL, title = paste0("Local dependence for variable X", representative_variable))
+save_sci(acf_plot, "task1_bootstrap_acf_comparison", "double", height_mm = 105)
 
 method_order <- c(
   "iid",
@@ -424,25 +389,16 @@ dependence_results$method_label <- factor(
   levels = method_order
 )
 
-grDevices::png(
-  file.path(figure_dir, "task1_bootstrap_acf_error.png"),
-  width = 9,
-  height = 4.8,
-  units = "in",
-  res = 300
-)
-graphics::par(mar = c(8, 5, 3, 1) + 0.1)
-graphics::boxplot(
-  mean_absolute_acf_error ~ method_label,
-  data = dependence_results,
-  las = 2,
-  col = c("#FEE8C8", rep("#B3CDE3", 3), rep("#CCEBC5", 3)),
-  border = "grey35",
-  ylab = "Mean absolute ACF error (lags 1--20)",
-  xlab = "",
-  main = "Preservation of local dependence"
-)
-grDevices::dev.off()
+error_plot <- ggplot(dependence_results,
+                     aes(method_label, mean_absolute_acf_error, fill = method)) +
+  geom_boxplot(linewidth = 0.3, outlier.size = 0.8) +
+  scale_fill_manual(values = c(iid = plot_palette[2], fixed = plot_palette[1],
+                               stationary = plot_palette[3]), guide = "none") +
+  scale_x_discrete(labels = c("iid", "Fixed\nL=10", "Fixed\nL=20", "Fixed\nL=40",
+                              "Stationary\nL=10", "Stationary\nL=20", "Stationary\nL=40")) +
+  labs(x = NULL, y = "Mean absolute ACF error (lags 1–20)",
+       title = "Preservation of local dependence")
+save_sci(error_plot, "task1_bootstrap_acf_error", "double", height_mm = 100)
 
 # Part C: f, phi and g checked on Setting 1 simulated data
 # --------------------------------------------------------
@@ -537,51 +493,26 @@ write_task1_csv(
   "task1_part_c_checks.csv"
 )
 
-plot_ladle <- function(result, title) {
-  criterion <- result$criterion
-  graphics::matplot(
-    criterion$dimension,
-    criterion[, c("f", "phi", "g")],
-    type = "o",
-    pch = c(1, 2, 16),
-    lty = c(2, 3, 1),
-    col = c("#2C7BB6", "#D7191C", "black"),
-    xlab = "Candidate dimension k",
-    ylab = "Criterion value",
-    main = title
-  )
-  graphics::abline(
-    v = result$q_hat,
-    col = "grey45",
-    lty = 3
-  )
-  graphics::legend(
-    "topright",
-    legend = c("f(k)", "phi(k)", "g(k)"),
-    pch = c(1, 2, 16),
-    lty = c(2, 3, 1),
-    col = c("#2C7BB6", "#D7191C", "black"),
-    bty = "n"
-  )
-}
-
-grDevices::png(
-  file.path(figure_dir, "task1_ladle_criterion.png"),
-  width = 9,
-  height = 4.5,
-  units = "in",
-  res = 300
-)
-graphics::par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
-plot_ladle(
-  fixed_ladle,
-  paste0("Fixed bootstrap: q-hat = ", fixed_ladle$q_hat)
-)
-plot_ladle(
-  stationary_ladle,
-  paste0("Stationary bootstrap: q-hat = ", stationary_ladle$q_hat)
-)
-grDevices::dev.off()
+ladle_plot_data <- tidyr::pivot_longer(ladle_criterion, c(f, phi, g),
+                                      names_to = "curve", values_to = "value")
+ladle_panels <- setNames(paste0(c("Fixed", "Stationary"), ": q-hat = ",
+                               part_c_checks$estimated_dimension), part_c_checks$method)
+ladle_plot <- ggplot(ladle_plot_data, aes(dimension, value, colour = curve,
+                                          shape = curve, linetype = curve)) +
+  geom_vline(data = part_c_checks, aes(xintercept = estimated_dimension),
+             colour = "grey50", linetype = 3, linewidth = 0.3) +
+  geom_line(linewidth = 0.5) + geom_point(size = 1.7) +
+  facet_wrap(~method, nrow = 1, labeller = as_labeller(ladle_panels)) +
+  scale_colour_manual(values = c(f = plot_palette[1], phi = plot_palette[2], g = "#000000"),
+                       breaks = c("f", "phi", "g"), labels = c("f(k)", "phi(k)", "g(k)")) +
+  scale_shape_manual(values = c(f = 1, phi = 2, g = 16), breaks = c("f", "phi", "g"),
+                      labels = c("f(k)", "phi(k)", "g(k)")) +
+  scale_linetype_manual(values = c(f = 2, phi = 3, g = 1), breaks = c("f", "phi", "g"),
+                         labels = c("f(k)", "phi(k)", "g(k)")) +
+  scale_x_continuous(breaks = seq(0, 9, 2)) +
+  labs(x = "Candidate dimension k", y = "Criterion value", colour = NULL,
+       shape = NULL, linetype = NULL)
+save_sci(ladle_plot, "task1_ladle_criterion", "double", height_mm = 95)
 
 message("Task 1 A--C analysis completed.")
 message("Data: ", data_dir)
